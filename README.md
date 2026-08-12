@@ -128,7 +128,19 @@ model switching.
   then `hermes gateway run` (or `hermes gateway install` for a background
   service). Restart after config changes: `hermes gateway run --replace`.
 
-## Install (development)
+## Install
+
+**From GitHub Releases:** download `vsh-hermes-<version>.vsix` from the
+[latest release](https://github.com/jonmach/VSHermes/releases/latest), then
+Extensions → Install from VSIX.
+
+**From the Marketplace** (BETA build, extension ID `synapticity.vsh-hermes`):
+search "VSHermes" in the Extensions view.
+
+First launch: the API key is auto-discovered from the Hermes `.env` (see
+Requirements); only prompted for if none is found anywhere.
+
+## Build & install from source (development)
 
 ```bash
 npm install
@@ -146,9 +158,6 @@ npx @vscode/vsce package          # dist/vsh-hermes-<version>.vsix
 code --install-extension dist/vsh-hermes-<version>.vsix --force
 # then: Command Palette → Developer: Reload Window
 ```
-
-First launch: the API key is auto-discovered from the Hermes `.env`; only
-prompted for if none is found anywhere.
 
 Settings: `vsh.hermes.baseUrl` (default `http://127.0.0.1:8642`),
 `vsh.hermes.checkSyncOnStartup`, `vsh.hermes.maxImageBytes`,
