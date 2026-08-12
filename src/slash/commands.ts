@@ -28,7 +28,9 @@ export type SlashHandlerId =
   | 'history'
   | 'skills'
   | 'help'
-  | 'fork';
+  | 'fork'
+  | 'set-title'
+  | 'status';
 
 export const SLASH_COMMANDS: SlashCommandDef[] = [
   { name: 'new', summary: 'Start a new chat session', kind: 'action', handler: 'new-session' },
@@ -38,15 +40,21 @@ export const SLASH_COMMANDS: SlashCommandDef[] = [
   { name: 'history', summary: 'Show session history', kind: 'action', handler: 'history' },
   { name: 'sessions', summary: 'Show session history', kind: 'action', handler: 'history' },
   { name: 'resume', summary: 'Show session history to continue a past session', kind: 'action', handler: 'history' },
+  { name: 'title', summary: 'Set a title for the current session', args: '[name]', kind: 'action', handler: 'set-title' },
+  { name: 'status', summary: 'Show current session info (id, title, model, messages)', kind: 'action', handler: 'status' },
   { name: 'skills', summary: 'List skills visible to Hermes', kind: 'action', handler: 'skills' },
   { name: 'fork', summary: 'Fork the current session', kind: 'action', handler: 'fork' },
+  { name: 'branch', summary: 'Branch the current session (alias of /fork)', kind: 'action', handler: 'fork' },
   { name: 'help', summary: 'List available slash commands', kind: 'action', handler: 'help' },
 
-  // Informational — sent to Hermes as normal text.
+  // Informational — sent to Hermes as normal text (no API equivalent).
   { name: 'compact', summary: 'Compress the conversation (sent as text; TUI command not available via API)', kind: 'informational' },
   { name: 'retry', summary: 'Retry the last turn (sent as text)', kind: 'informational' },
   { name: 'personality', summary: 'Switch personality (sent as text)', kind: 'informational' },
-  { name: 'prompt', summary: 'Show the active system prompt (sent as text)', kind: 'informational' },
+  { name: 'save', summary: 'Save the current conversation (sent as text)', kind: 'informational' },
+  { name: 'compress', summary: 'Compress context manually (sent as text)', kind: 'informational' },
+  { name: 'queue', summary: 'Queue a prompt for the next turn (sent as text)', kind: 'informational' },
+  { name: 'steer', summary: 'Inject a mid-run note (sent as text)', kind: 'informational' },
 
   // Unsupported — TUI-only, no API equivalent, NOT sent as text.
   { name: 'undo', summary: 'Undo last message (TUI-only)', kind: 'unsupported' },
@@ -57,6 +65,29 @@ export const SLASH_COMMANDS: SlashCommandDef[] = [
   { name: 'snapshot', summary: 'File checkpointing (TUI-only)', kind: 'unsupported' },
   { name: 'mcp', summary: 'Manage MCP servers (TUI-only)', kind: 'unsupported' },
   { name: 'plugins', summary: 'Manage plugins (TUI-only)', kind: 'unsupported' },
+  { name: 'prompt', summary: 'Compose the next prompt in $EDITOR (TUI-only)', kind: 'unsupported' },
+  { name: 'rollback', summary: 'List or restore filesystem checkpoints (TUI-only)', kind: 'unsupported' },
+  { name: 'diff', summary: 'Show git changes in the working directory (TUI-only)', kind: 'unsupported' },
+  { name: 'goal', summary: 'Set a standing goal Hermes works toward (TUI-only)', kind: 'unsupported' },
+  { name: 'fast', summary: 'Toggle fast mode (TUI-only)', kind: 'unsupported' },
+  { name: 'reasoning', summary: 'Manage reasoning effort/display (TUI-only)', kind: 'unsupported' },
+  { name: 'voice', summary: 'Toggle CLI voice mode (TUI-only)', kind: 'unsupported' },
+  { name: 'approvals', summary: 'Set dangerous-command approval mode (TUI-only)', kind: 'unsupported' },
+  { name: 'tools', summary: 'Manage tools for the session (TUI-only)', kind: 'unsupported' },
+  { name: 'toolsets', summary: 'List available toolsets (TUI-only)', kind: 'unsupported' },
+  { name: 'browser', summary: 'Manage a local CDP browser connection (TUI-only)', kind: 'unsupported' },
+  { name: 'bundles', summary: 'List configured skill bundles (TUI-only)', kind: 'unsupported' },
+  { name: 'learn', summary: 'Distill a reusable skill from anything (TUI-only)', kind: 'unsupported' },
+  { name: 'init', summary: 'Generate or update AGENTS.md (TUI-only)', kind: 'unsupported' },
+  { name: 'cron', summary: 'Manage scheduled tasks (TUI-only)', kind: 'unsupported' },
+  { name: 'reload', summary: 'Reload .env into the running session (TUI-only)', kind: 'unsupported' },
+  { name: 'version', summary: 'Show Hermes Agent version (TUI-only)', kind: 'unsupported' },
+  { name: 'whoami', summary: 'Show slash command access level (TUI-only)', kind: 'unsupported' },
+  { name: 'usage', summary: 'Show token usage and cost (TUI-only)', kind: 'unsupported' },
+  { name: 'update', summary: 'Update Hermes Agent (TUI-only)', kind: 'unsupported' },
+  { name: 'paste', summary: 'Attach a clipboard image (TUI-only)', kind: 'unsupported' },
+  { name: 'image', summary: 'Attach a local image file (TUI-only)', kind: 'unsupported' },
+  { name: 'quit', summary: 'Exit the CLI (TUI-only)', kind: 'unsupported' },
 ];
 
 export interface SlashMatch {

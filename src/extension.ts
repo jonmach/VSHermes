@@ -574,6 +574,12 @@ class VSHermes {
       case 'focusHistory':
         this.focusHistory();
         break;
+      case 'setTitle':
+        await this.setTitle(msg.title);
+        break;
+      case 'showStatus':
+        await this.showSessionStatus();
+        break;
       case 'diag':
         this.logInfo(`webview [${msg.level}]: ${msg.message}`);
         if (msg.level === 'error') {
@@ -617,6 +623,12 @@ class VSHermes {
       case 'fork':
         await this.forkSession();
         break;
+      case 'set-title':
+        await this.setTitle('');
+        break;
+      case 'status':
+        await this.showSessionStatus();
+        break;
       case 'help':
         this.view.postInfo(
           'VSHermes slash commands:\n' +
@@ -639,6 +651,50 @@ class VSHermes {
         this.logInfo('vsh.hermes.history.focus not available; falling back to container focus');
         void vscode.commands.executeCommand('workbench.view.extension.vsh-hermes');
       });
+  }
+
+  /** /title — set the current session's title via PATCH /api/sessions/{id}. */
+  private async setTitle(rawTitle: string): Promise<void> {
+    let title = rawTitle.trim();
+    if (!title) {
+      title =
+        (await vscode.window.showInputBox({
+          prompt: 'Session title',
+          placeHolder: 'My Session Name',
+        }))?.trim() ?? '';
+      if (!title) return;
+    }
+    if (!this.sessionId) {
+      await this.newSession();
+      if (!this.sessionId) return;
+    }
+    try {
+      const c = await this.ensureClient();
+      const res = await c.patchSession(this.sessionId, { title });
+      this.view.postInfo(`Session titled: ${res.session.title}`);
+      void this.listSessions();
+    } catch (err) {
+      this.reportError(err);
+    }
+  }
+
+  /** /status — show the current session's client-safe metadata in chat. */
+  private async showSessionStatus(): Promise<void> {
+    if (!this.sessionId) {
+      this.view.postInfo('No active session — type a message to start one.');
+      return;
+    }
+    try {
+      const c = await this.ensureClient();
+      const res = await c.getSession(this.sessionId);
+      const s = res.session;
+      const started = s.started_at ? new Date(s.started_at * 1000).toLocaleString() : '?';
+      this.view.postInfo(
+        `Session ${s.id}\nTitle: ${s.title ?? '(none)'}\nModel: ${s.model ?? '?'}\nMessages: ${s.message_count ?? 0}\nSource: ${s.source ?? '?'}\nStarted: ${started}`,
+      );
+    } catch (err) {
+      this.reportError(err);
+    }
   }
 
   private reportError(err: unknown): void {

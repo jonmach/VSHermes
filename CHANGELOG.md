@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.6 (2026-08-12)
+
+- **`/title` is now a working slash command** — it was missing from the
+  catalog entirely, so the picker couldn't show it. Picker → `/title ` →
+  type the name → Enter → `PATCH /api/sessions/{id}` sets the session title
+  (empty args opens an InputBox prompt instead). History + chat refresh.
+- **`/status` added** — shows current session info in chat (id, title,
+  model, message count, source, started) via GET /api/sessions/{id}.
+- **Slash catalog synced with the Hermes reference** — `/branch` (fork
+  alias) as an action; `/save`, `/compress`, `/queue`, `/steer` marked
+  informational (sent as text, no API equivalent); TUI-only commands now
+  listed honestly as unsupported (`/rollback`, `/diff`, `/snapshot`,
+  `/goal`, `/fast`, `/reasoning`, `/voice`, `/approvals`, `/tools`,
+  `/toolsets`, `/browser`, `/bundles`, `/learn`, `/init`, `/cron`,
+  `/reload`, `/version`, `/whoami`, `/usage`, `/update`, `/paste`,
+  `/image`, `/quit`). `/prompt`'s wrong summary fixed (it composes in
+  $EDITOR — TUI-only, reclassified unsupported).
+
 ## 0.1.5 (2026-08-12)
 
 - **Input helper text removed** — the "Enter to send · Shift+Enter newline ·

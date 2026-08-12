@@ -46,6 +46,8 @@ export type WebviewMessage =
   | { type: 'listSessions' }
   | { type: 'checkSync' }
   | { type: 'focusHistory' }
+  | { type: 'setTitle'; title: string }
+  | { type: 'showStatus' }
   | { type: 'diag'; level: 'info' | 'error'; message: string };
 
 export type { ApprovalDecision, ChatMessage, MessagePart, SessionSummary, StreamEvent, SyncReport };

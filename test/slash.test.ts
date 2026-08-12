@@ -52,4 +52,20 @@ describe('filterSlash', () => {
     expect(SLASH_COMMANDS.find((c) => c.name === 'yolo')?.kind).toBe('unsupported');
     expect(SLASH_COMMANDS.find((c) => c.name === 'compact')?.kind).toBe('informational');
   });
+
+  it('catalog covers /title as a working action', () => {
+    const title = SLASH_COMMANDS.find((c) => c.name === 'title');
+    expect(title?.kind).toBe('action');
+    expect(title?.handler).toBe('set-title');
+    const m = matchSlash('/title My Session');
+    expect(m?.name).toBe('title');
+    expect(m?.args).toBe('My Session');
+    expect(filterSlash('tit')[0].name).toBe('title');
+  });
+
+  it('syncs aliases and reclassifies /prompt honestly', () => {
+    expect(SLASH_COMMANDS.find((c) => c.name === 'branch')?.handler).toBe('fork');
+    expect(SLASH_COMMANDS.find((c) => c.name === 'status')?.kind).toBe('action');
+    expect(SLASH_COMMANDS.find((c) => c.name === 'prompt')?.kind).toBe('unsupported');
+  });
 });

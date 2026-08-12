@@ -1,6 +1,6 @@
 # VSHermes
 
-Hermes Agent chat for VS Code — a Claude-Code-style panel over the **Hermes API Server** (Surface A), not a terminal wrapper.
+Hermes Agent chat for VS Code — a Claude-Code-style panel over the **Hermes API Server**, not a terminal wrapper.
 
 - Multiline input: **Enter** sends, **Shift+Enter** inserts a newline
 - **Chat header actions** (icons in the Chat tab's title bar): New Chat, Check Sync, Switch Model, Refresh History — plus the full command palette (VSHermes: …) for every action including Set API Key
@@ -40,12 +40,14 @@ All API traffic runs in the extension host; the webview never sees the API key.
 - Hermes with the gateway **api_server** platform enabled:
 
   `.env`:
+
   ```
   API_SERVER_ENABLED=true
   API_SERVER_KEY=<your-secret-key-min-8-chars>
   API_SERVER_HOST=127.0.0.1
   API_SERVER_PORT=8642
   ```
+
   then `hermes gateway run` (or `hermes gateway install` as a service).
 
 ## Install (development)
@@ -68,12 +70,12 @@ First launch: the extension prompts for the API key (`API_SERVER_KEY`) and store
 
 The plugin pins a manifest (`src/api/sync.ts`): minimum Hermes version, required features, required endpoints. On connect it fetches `/health` (version) and `/v1/capabilities` (self-described surface) and diffs:
 
-| Verdict | Meaning | Action |
-|---|---|---|
-| ok | aligned with the verified surface | — |
+| Verdict  | Meaning                                                               | Action                                        |
+| -------- | --------------------------------------------------------------------- | --------------------------------------------- |
+| ok       | aligned with the verified surface                                     | —                                             |
 | outdated | Hermes missing a required feature/endpoint, or older than the minimum | upgrade Hermes (or install an older VSHermes) |
-| ahead | Hermes advertises features the plugin doesn't know | informational — plugin still works |
-| unknown | server unreachable / bad key | fix connection |
+| ahead    | Hermes advertises features the plugin doesn't know                    | informational — plugin still works            |
+| unknown  | server unreachable / bad key                                          | fix connection                                |
 
 Shown as a banner in the chat panel + status bar warning; re-checkable via the `VSHermes: Check Hermes Sync` command, the banner button, or `npm run check-sync` from a terminal:
 
@@ -83,11 +85,11 @@ node scripts/check-sync.mjs
 
 ## Slash commands
 
-| Category | Commands | Behaviour |
-|---|---|---|
-| action | `/new /clear /model /stop /history /sessions /resume /skills /fork /help` | executed client-side against the API (new session, model lock, run stop, …) |
-| informational | `/compact /retry /personality /prompt` | sent to Hermes as plain text (the API server does not interpret slash text) |
-| unsupported | `/undo /yolo /export /doctor /memory /snapshot /mcp /plugins` | shown with a TUI-only notice; never sent as literal text |
+| Category      | Commands                                                                  | Behaviour                                                                   |
+| ------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| action        | `/new /clear /model /stop /history /sessions /resume /skills /fork /help` | executed client-side against the API (new session, model lock, run stop, …) |
+| informational | `/compact /retry /personality /prompt`                                    | sent to Hermes as plain text (the API server does not interpret slash text) |
+| unsupported   | `/undo /yolo /export /doctor /memory /snapshot /mcp /plugins`             | shown with a TUI-only notice; never sent as literal text                    |
 
 Unknown commands are not sent as text — the picker only offers the catalog.
 
@@ -99,23 +101,23 @@ The API server is OpenAI-compatible and does **not** interpret `/` text (verifie
 
 Every endpoint the plugin uses was probed against the live Hermes **0.20.0** gateway before the client was written:
 
-| Hop | Endpoint | Verified |
-|---|---|---|
-| 1 | GET /health | ✅ 200 {status, version} |
-| 2 | GET /v1/capabilities | ✅ features + endpoints map |
-| 3 | GET /api/sessions?limit=&order= | ✅ list + usage fields |
-| 4 | POST /api/sessions | ✅ 201; 400 `invalid_title` on duplicates (titles unique) |
-| 5 | POST /api/sessions/{id}/chat {message} | ✅ completion + usage + runtime |
-| 6 | POST /api/sessions/{id}/chat/stream | ✅ SSE: run.started → message.started → assistant.delta → tool.started → tool.progress (_thinking) → tool.completed → assistant.completed → run.completed → done |
-| 7 | GET /api/sessions/{id}/messages | ✅ {data, pagination} |
-| 8 | POST /api/sessions/{id}/model | ✅ model_lock accepted |
-| 9 | POST /api/sessions/{id}/fork | ✅ 201, auto-suffixed title |
-| 10 | POST /v1/runs {model, input} | ✅ 202 {run_id} |
-| 11 | GET /v1/runs/{id} | ✅ status |
-| 12 | POST /v1/runs/{id}/stop | ✅ |
-| 13 | POST /v1/runs/{id}/approval | ✅ endpoint responds; exact event name inferred from `approval_events` capability — **❓** not observed live (this deployment's terminal path did not require approval) |
-| 14 | multimodal image parts (data: URLs) | ✅ accepted + routed to vision auxiliary (test image deliberately minimal) |
-| 15 | /v1/models, /v1/skills, /v1/toolsets, /api/model/options | ✅ |
+| Hop | Endpoint                                                 | Verified                                                                                                                                                                |
+| --- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | GET /health                                              | ✅ 200 {status, version}                                                                                                                                                |
+| 2   | GET /v1/capabilities                                     | ✅ features + endpoints map                                                                                                                                             |
+| 3   | GET /api/sessions?limit=&order=                          | ✅ list + usage fields                                                                                                                                                  |
+| 4   | POST /api/sessions                                       | ✅ 201; 400 `invalid_title` on duplicates (titles unique)                                                                                                               |
+| 5   | POST /api/sessions/{id}/chat {message}                   | ✅ completion + usage + runtime                                                                                                                                         |
+| 6   | POST /api/sessions/{id}/chat/stream                      | ✅ SSE: run.started → message.started → assistant.delta → tool.started → tool.progress (\_thinking) → tool.completed → assistant.completed → run.completed → done       |
+| 7   | GET /api/sessions/{id}/messages                          | ✅ {data, pagination}                                                                                                                                                   |
+| 8   | POST /api/sessions/{id}/model                            | ✅ model_lock accepted                                                                                                                                                  |
+| 9   | POST /api/sessions/{id}/fork                             | ✅ 201, auto-suffixed title                                                                                                                                             |
+| 10  | POST /v1/runs {model, input}                             | ✅ 202 {run_id}                                                                                                                                                         |
+| 11  | GET /v1/runs/{id}                                        | ✅ status                                                                                                                                                               |
+| 12  | POST /v1/runs/{id}/stop                                  | ✅                                                                                                                                                                      |
+| 13  | POST /v1/runs/{id}/approval                              | ✅ endpoint responds; exact event name inferred from `approval_events` capability — **❓** not observed live (this deployment's terminal path did not require approval) |
+| 14  | multimodal image parts (data: URLs)                      | ✅ accepted + routed to vision auxiliary (test image deliberately minimal)                                                                                              |
+| 15  | /v1/models, /v1/skills, /v1/toolsets, /api/model/options | ✅                                                                                                                                                                      |
 
 ## Tests
 

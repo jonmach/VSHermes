@@ -94,6 +94,25 @@ describe('webview bundle (dist/media/chat.js)', () => {
     expect(sent.some((m) => m.type === 'send')).toBe(false);
   });
 
+  it('/title with args posts setTitle on Enter (not sent as text)', () => {
+    const { dom, sent, input } = bootWebview();
+    input.value = '/title My Session';
+    keydown(dom.window, 'Enter');
+    const m = sent.find((x) => x.type === 'setTitle');
+    expect(m).toBeDefined();
+    expect((m as unknown as { title: string }).title).toBe('My Session');
+    expect(sent.some((x) => x.type === 'send')).toBe(false);
+  });
+
+  it('/title without args still posts setTitle (host prompts)', () => {
+    const { dom, sent, input } = bootWebview();
+    input.value = '/title';
+    keydown(dom.window, 'Enter');
+    const m = sent.find((x) => x.type === 'setTitle');
+    expect(m).toBeDefined();
+    expect((m as unknown as { title: string }).title).toBe('');
+  });
+
   it('send button transmits the message', () => {
     const { dom, sent, input, sendBtn } = bootWebview();
     input.value = 'via button';

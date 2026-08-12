@@ -565,6 +565,14 @@ function runSlashAction(c: SlashCommandDef): void {
     case 'fork':
       post({ type: 'forkSession' });
       break;
+    case 'set-title':
+      // Keep the typed "/title " so the user can enter the session name,
+      // then Enter posts setTitle with the args (see keydown handler).
+      inputEl.value += '/title ';
+      break;
+    case 'status':
+      post({ type: 'showStatus' });
+      break;
     case 'help':
       addNote(
         'VSHermes commands:\n' +
@@ -700,12 +708,20 @@ inputEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     const m = matchSlash(inputEl.value.trim());
-    if (m && m.def && m.def.kind === 'action' && !m.args) {
-      // "/new" etc. with no args — run the action instead of sending text.
-      if (m.def.handler === 'new-session' || m.def.handler === 'clear-session' || m.def.handler === 'stop' || m.def.handler === 'history' || m.def.handler === 'help') {
-        runSlashAction(m.def);
+    if (m && m.def && m.def.kind === 'action') {
+      if (m.def.handler === 'set-title') {
+        // "/title My Session" — post the args (empty args → host prompts).
+        post({ type: 'setTitle', title: m.args });
         inputEl.value = '';
         return;
+      }
+      if (!m.args) {
+        // "/new" etc. with no args — run the action instead of sending text.
+        if (m.def.handler === 'new-session' || m.def.handler === 'clear-session' || m.def.handler === 'stop' || m.def.handler === 'history' || m.def.handler === 'help') {
+          runSlashAction(m.def);
+          inputEl.value = '';
+          return;
+        }
       }
     }
     void sendNow();
