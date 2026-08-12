@@ -63,7 +63,6 @@ const approvalCmd = $('#approval-cmd');
 const syncBanner = $('#sync-banner');
 const connEl = $('#conn');
 const modelBadge = $('#model-badge');
-const hintEl = $('#hint');
 
 // ── state ──────────────────────────────────────────────────────────
 

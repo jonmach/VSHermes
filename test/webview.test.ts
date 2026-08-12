@@ -30,7 +30,6 @@ const WEBVIEW_HTML = `<!DOCTYPE html><html><body>
     <div id="chips"></div>
     <textarea id="input"></textarea>
     <button id="send-btn"></button>
-    <div id="hint"></div>
   </div>
 </body></html>`;
 

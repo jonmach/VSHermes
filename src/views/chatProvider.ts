@@ -132,7 +132,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     #input:focus { border-color: var(--vsh-accent); }
     #send-btn { background: var(--vsh-accent); color: #fff; border: none; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-weight: 600; }
     #send-btn:disabled { opacity: 0.5; cursor: default; }
-    #hint { font-size: 11px; color: var(--vsh-muted); }
     #slash-popup { position: absolute; bottom: 100%; left: 8px; right: 8px; max-height: 240px; overflow-y: auto; background: var(--vscode-editorWidget-background, #252526); border: 1px solid var(--vsh-border); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.35); display: none; z-index: 10; }
     #slash-popup.show { display: block; }
     .slash-item { padding: 6px 10px; cursor: pointer; display: flex; gap: 8px; align-items: baseline; }
@@ -175,10 +174,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     </div></div>
     <div id="chips"></div>
     <div id="input-row">
-      <textarea id="input" rows="1" placeholder="Message Hermes…  (/ for commands, paste images)"></textarea>
+      <textarea id="input" rows="1" placeholder="Message Hermes…"></textarea>
       <button id="send-btn">&#10148;</button>
     </div>
-    <div id="hint">Enter to send &#183; Shift+Enter newline &#183; / commands &#183; paste or drop images</div>
   </div>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>

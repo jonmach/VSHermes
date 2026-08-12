@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.5 (2026-08-12)
+
+- **Input helper text removed** — the "Enter to send · Shift+Enter newline ·
+  / commands · paste or drop images" hint line under the input is gone
+  (it wrapped on narrow sidebars), and the textarea placeholder is just
+  "Message Hermes…" (dropped the "(/ for commands, paste images)" part).
+
 ## 0.1.4 (2026-08-12)
 
 - **Home tab removed.** Webview-based views have an enforced minimum size in
