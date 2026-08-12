@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.4 (2026-08-12)
+
+- **Home tab removed.** Webview-based views have an enforced minimum size in
+  VS Code — a 40px dock still occupied ~150px of sidebar with blank space,
+  and the border couldn't be dragged smaller. The four frequent actions are
+  now icons in the Chat view's title bar (`+` New Chat, `⟳` Check Sync,
+  `⚙` Switch Model, `↻` Refresh History — codicons with hover tooltips);
+  Set API Key stays command-palette only. Container is now Chat + History.
+  All actions remain in the palette (VSHermes: …). The home webview, its
+  bundle, and its tests were deleted.
+
 ## 0.1.3 (2026-08-12)
 
 - **Home tab slimmed to just the icon dock** — the connection status line

@@ -2,7 +2,7 @@
   "name": "vsh-hermes",
   "displayName": "VSHermes",
   "description": "Hermes Agent chat for VS Code — full agent UI (multiline input, image paste, slash commands, history, tool activity, approvals) over the Hermes API Server.",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "vsh",
   "license": "MIT",
   "engines": {
@@ -34,11 +34,6 @@
       "vsh-hermes": [
         {
           "type": "webview",
-          "id": "vsh.hermes.home",
-          "name": "Home"
-        },
-        {
-          "type": "webview",
           "id": "vsh.hermes.chat",
           "name": "Chat"
         },
@@ -56,7 +51,8 @@
       },
       {
         "command": "vsh.hermes.newSession",
-        "title": "VSHermes: New Chat"
+        "title": "VSHermes: New Chat",
+        "icon": "$(add)"
       },
       {
         "command": "vsh.hermes.openHistory",
@@ -83,7 +79,8 @@
       },
       {
         "command": "vsh.hermes.checkSync",
-        "title": "VSHermes: Check Hermes Sync"
+        "title": "VSHermes: Check Hermes Sync",
+        "icon": "$(sync)"
       },
       {
         "command": "vsh.hermes.setApiKey",
@@ -91,10 +88,33 @@
       },
       {
         "command": "vsh.hermes.chooseModel",
-        "title": "VSHermes: Switch Model"
+        "title": "VSHermes: Switch Model",
+        "icon": "$(gear)"
       }
     ],
     "menus": {
+      "view/title": [
+        {
+          "command": "vsh.hermes.newSession",
+          "when": "view == vsh.hermes.chat",
+          "group": "navigation"
+        },
+        {
+          "command": "vsh.hermes.checkSync",
+          "when": "view == vsh.hermes.chat",
+          "group": "navigation"
+        },
+        {
+          "command": "vsh.hermes.chooseModel",
+          "when": "view == vsh.hermes.chat",
+          "group": "navigation"
+        },
+        {
+          "command": "vsh.hermes.refreshSessions",
+          "when": "view == vsh.hermes.chat",
+          "group": "navigation"
+        }
+      ],
       "view/item/context": [
         {
           "command": "vsh.hermes.openSession",

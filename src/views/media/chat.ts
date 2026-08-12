@@ -603,7 +603,7 @@ function ensureNoSessionHint(): void {
   el.id = 'no-session-hint';
   el.className = 'info-note';
   el.textContent =
-    'No session yet — type a message below to start one. Actions (New Chat, Check Sync, …) live in the Home tab.';
+    'No session yet — type a message below to start one. New chat, sync check and model live in the chat header + command palette (VSHermes: …).';
   messagesEl.appendChild(el);
   scrollBottom();
 }
