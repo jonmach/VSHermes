@@ -38,12 +38,17 @@ Initial release.
 - **Home tab added** — action buttons (New Chat, Check Sync, Switch Model,
   History, Set API Key, Refresh) moved out of the Chat/History tab headers
   into a dedicated Home tab above Chat; future actions slot into it.
-- **Official Hermes logo** — the activity-bar icon is now the official
-  `favicon-32x32.png` from the Hermes website assets (caduceus on circular
-  badge). Lesson recorded: VS Code renders activity-bar container icons as
-  theme-tinted masks and its SVG icon parser chokes on gradients/groups/
-  strokes — hand-drawn SVGs render as solid blocks. A plain PNG renders
-  as-is and is the reliable choice.
+- **Activity-bar icon: root cause found and fixed** — the white square was
+  NOT a rendering failure: VS Code tints activity-bar icons with the theme
+  foreground, and the official Hermes Agent logo is too dense to read at
+  24px (54% solid pixel coverage, 1px gaps — it renders as a solid white
+  mass). The user-supplied `hermesagent.svg` was installed and rendering
+  correctly all along; it *is* the white square. Verified by rendering the
+  SVG at 24px and matching the pixel geometry of the user's screenshot.
+  Fixed with a simplified redraw of the same logo (head circle, wings, two
+  pillars, base — 19% coverage, real negative space), which reads clearly
+  at 24px. Lesson: activity-bar icons need strong negative space at 24px;
+  dense logos (however official) render as solid blocks.
 - **Welcome screen removed from the Chat tab** — the centered New chat /
   Check sync buttons it carried confused the layout (those actions live in
   the Home tab now); replaced with a slim inline hint when no session exists.
