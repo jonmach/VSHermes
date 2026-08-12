@@ -1,12 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <!-- Official Hermes brand mark: white caduceus (winged staff + two
-       crossing serpents) on a black circular badge, reproduced as vector
-       paths from website/static/img/logo.png -->
-  <circle cx="50" cy="50" r="47" fill="#0b0b0c"/>
-  <rect x="48" y="24" width="4" height="60" rx="2" fill="#ffffff"/>
-  <path d="M49 27 C38 20 24 17 14 23 C26 25 38 27 49 32 Z" fill="#ffffff"/>
-  <path d="M51 27 C62 20 76 17 86 23 C74 25 62 27 51 32 Z" fill="#ffffff"/>
-  <path d="M40 36 C54 44 54 52 40 60 C26 68 26 76 40 82" stroke="#ffffff" stroke-width="5.5" stroke-linecap="round" fill="none"/>
-  <path d="M60 36 C46 44 46 52 60 60 C74 68 74 76 60 82" stroke="#ffffff" stroke-width="5.5" stroke-linecap="round" fill="none"/>
-  <circle cx="50" cy="85" r="4.5" fill="#ffffff"/>
+  <!-- Hermes caduceus, monochrome silhouette on transparent background.
+       VS Code renders activity-bar icons as theme-tinted masks, so the
+       mark must be a single-color shape with no background.
+       Structure follows the project's canonical HERMES_CADUCEUS art
+       (hermes_cli/banner.py): swept wings, staff, two serpent crossings,
+       knot, flared base. -->
+  <g fill="#000000">
+    <path d="M50 22 C40 12 26 8 12 12 C24 16 38 20 50 28 Z"/>
+    <path d="M50 22 C60 12 74 8 88 12 C76 16 62 20 50 28 Z"/>
+    <path d="M50 28 C38 22 24 20 14 26 C26 30 38 32 50 38 Z"/>
+    <path d="M50 28 C62 22 76 20 86 26 C74 30 62 32 50 38 Z"/>
+    <rect x="47.5" y="30" width="5" height="60" rx="2.5"/>
+    <circle cx="50" cy="78" r="5"/>
+  </g>
+  <g stroke="#000000" stroke-width="6" fill="none" stroke-linecap="round">
+    <path d="M40 40 C54 48 54 56 40 64 C54 72 54 80 40 86"/>
+    <path d="M60 40 C46 48 46 56 60 64 C46 72 46 80 60 86"/>
+  </g>
+  <g stroke="#000000" stroke-width="4" fill="none" stroke-linecap="round">
+    <path d="M50 90 C44 93 40 96 36 100"/>
+    <path d="M50 90 C56 93 60 96 64 100"/>
+  </g>
 </svg>

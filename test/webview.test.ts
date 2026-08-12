@@ -21,9 +21,6 @@ const WEBVIEW_HTML = `<!DOCTYPE html><html><body>
     <span id="model-badge" class="model-badge"></span>
   </div>
   <div id="messages"></div>
-  <div id="welcome" hidden><div id="welcome-sub"></div>
-    <button id="btn-welcome-new"></button><button id="btn-welcome-sync"></button>
-  </div>
   <div id="input-area">
     <div id="slash-popup"></div>
     <div id="approval"><div class="cmd" id="approval-cmd"></div>
@@ -107,8 +104,40 @@ describe('webview bundle (dist/media/chat.js)', () => {
     expect((send!.parts as Array<{ text?: string }>)[0].text).toBe('via button');
   });
 
-  it('renders host state and hides the welcome screen when connected', () => {
+  it('renders host state and shows a start hint when there is no session', () => {
     const { dom, post } = bootWebview();
+    post({
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      syncReport: null,
+      sessionId: null,
+      model: 'hermes-agent',
+      sessions: [],
+      slashCommands: [],
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    });
+    const conn = dom.window.document.getElementById('conn')!;
+    expect(conn.textContent).toContain('Hermes');
+    expect(dom.window.document.getElementById('no-session-hint')).not.toBeNull();
+  });
+
+  it('removes the start hint once a session is active', () => {
+    const { dom, post } = bootWebview();
+    post({
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      syncReport: null,
+      sessionId: null,
+      model: 'hermes-agent',
+      sessions: [],
+      slashCommands: [],
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    });
+    expect(dom.window.document.getElementById('no-session-hint')).not.toBeNull();
     post({
       type: 'state',
       connected: true,
@@ -121,10 +150,7 @@ describe('webview bundle (dist/media/chat.js)', () => {
       maxImageBytes: 8388608,
       maxImageDimension: 4096,
     });
-    const conn = dom.window.document.getElementById('conn')!;
-    const welcome = dom.window.document.getElementById('welcome')!;
-    expect(conn.textContent).toContain('Hermes');
-    expect(welcome.hasAttribute('hidden')).toBe(true);
+    expect(dom.window.document.getElementById('no-session-hint')).toBeNull();
   });
 
   it('renders the sync banner for an outdated report', () => {

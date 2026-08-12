@@ -38,7 +38,13 @@ Initial release.
 - **Home tab added** — action buttons (New Chat, Check Sync, Switch Model,
   History, Set API Key, Refresh) moved out of the Chat/History tab headers
   into a dedicated Home tab above Chat; future actions slot into it.
-- **Official Hermes logo** — replaced the placeholder icon with a vector
-  reproduction of the brand mark (white caduceus on a black circular badge,
-  from the Hermes website assets).
+- **Official Hermes logo** — monochrome caduceus silhouette (transparent
+  background) built from the project's canonical HERMES_CADUCEUS art;
+  activity-bar icons are theme-tinted masks, so the icon must be a
+  single-color mark, not a colored badge.
+- **Welcome screen removed from the Chat tab** — the centered New chat /
+  Check sync buttons it carried confused the layout (those actions live in
+  the Home tab now); replaced with a slim inline hint when no session exists.
+- **History button focus hardened** — falls back to focusing the VSHermes
+  container if the generated view-focus command is unavailable.
 

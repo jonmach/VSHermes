@@ -161,11 +161,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     <span id="model-badge" class="model-badge" title="Switch model"></span>
   </div>
   <div id="messages"></div>
-  <div id="welcome" hidden>
-    <div style="font-size: 18px">&#9889; VSHermes</div>
-    <div class="sub" id="welcome-sub">Connect to the Hermes API server to start chatting.</div>
-    <div><button id="btn-welcome-new">New chat</button> <button id="btn-welcome-sync">Check sync</button></div>
-  </div>
   <div id="input-area">
     <div id="slash-popup"></div>
     <div id="approval"><div class="box">

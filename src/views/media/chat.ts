@@ -54,8 +54,6 @@ window.addEventListener('unhandledrejection', (e) => {
 const $ = <T extends HTMLElement>(id: string): T =>
   document.getElementById(id.replace(/^#/, '')) as T;
 const messagesEl = $('#messages');
-const welcomeEl = $('#welcome');
-const welcomeSub = $('#welcome-sub');
 const inputEl = $('#input') as HTMLTextAreaElement;
 const sendBtn = $('#send-btn') as HTMLButtonElement;
 const chipsEl = $('#chips');
@@ -597,6 +595,23 @@ async function sendNow(textOverride?: string): Promise<void> {
   post({ type: 'send', parts });
 }
 
+// ── no-session hint ────────────────────────────────────────────────
+
+function ensureNoSessionHint(): void {
+  if (document.getElementById('no-session-hint')) return;
+  const el = document.createElement('div');
+  el.id = 'no-session-hint';
+  el.className = 'info-note';
+  el.textContent =
+    'No session yet — type a message below to start one. Actions (New Chat, Check Sync, …) live in the Home tab.';
+  messagesEl.appendChild(el);
+  scrollBottom();
+}
+
+function clearNoSessionHint(): void {
+  document.getElementById('no-session-hint')?.remove();
+}
+
 // ── host messages ──────────────────────────────────────────────────
 
 function onHostMessage(msg: HostMessage): void {
@@ -612,10 +627,11 @@ function onHostMessage(msg: HostMessage): void {
       connEl.textContent = msg.connected ? `● Hermes` : `○ offline (${msg.baseUrl})`;
       connEl.style.color = msg.connected ? 'var(--vsh-accent)' : 'var(--vsh-error)';
       modelBadge.textContent = msg.model ? `⚙ ${msg.model}` : '';
-      welcomeSub.textContent = msg.connected
-        ? 'Connected. Start a new chat or open a session from History.'
-        : `Cannot reach ${msg.baseUrl}. Is the Hermes gateway running?`;
-      welcomeEl.hidden = msg.connected;
+      if (msg.connected && !msg.sessionId) {
+        ensureNoSessionHint();
+      } else {
+        clearNoSessionHint();
+      }
       renderSyncBanner(msg.syncReport);
       break;
     case 'session':
@@ -624,6 +640,7 @@ function onHostMessage(msg: HostMessage): void {
     case 'messages':
       renderMessages(msg.messages);
       state.sessionId = msg.sessionId;
+      clearNoSessionHint();
       break;
     case 'sessions':
       // History tree is the canonical surface; nothing to render here.
@@ -737,8 +754,6 @@ sendBtn.addEventListener('click', () => {
   }
 });
 
-$('#btn-welcome-new').addEventListener('click', () => post({ type: 'newSession' }));
-$('#btn-welcome-sync').addEventListener('click', () => post({ type: 'checkSync' }));
 modelBadge.addEventListener('click', () => post({ type: 'chooseModel' }));
 
 // ── init ───────────────────────────────────────────────────────────

@@ -689,7 +689,12 @@ class VSHermes {
   }
 
   private focusHistory(): void {
-    void vscode.commands.executeCommand('vsh.hermes.history.focus');
+    void Promise.resolve(vscode.commands.executeCommand('vsh.hermes.history.focus'))
+      .then(() => this.logInfo('history view focused'))
+      .catch(() => {
+        this.logInfo('vsh.hermes.history.focus not available; falling back to container focus');
+        void vscode.commands.executeCommand('workbench.view.extension.vsh-hermes');
+      });
   }
 
   private reportError(err: unknown): void {
