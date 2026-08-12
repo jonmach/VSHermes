@@ -1,19 +1,67 @@
-# VSHermes
+# VSHermes — Hermes Agent chat for VS Code
 
-Hermes Agent chat for VS Code — a Claude-Code-style panel over the **Hermes API Server**, not a terminal wrapper.
+> **Status: BETA.** One product, version 0.1.x — incremental builds of the same
+> thing, each re-verified against the pinned Hermes API surface. This README
+> describes current functionality, not history (see CHANGELOG.md for the
+> change log).
 
+A Claude-Code-style chat panel for [Hermes Agent](https://hermes-agent.nousresearch.com),
+running over the **Hermes API Server** — not a terminal wrapper. The chat
+lives in a webview panel in the sidebar: real multiline input, image paste,
+a slash-command picker, session history, live tool activity, approvals, and
+model switching.
+
+## Features
+
+**Chat panel**
 - Multiline input: **Enter** sends, **Shift+Enter** inserts a newline
-- **Chat header actions** (icons in the Chat tab's title bar): New Chat, Check Sync, Switch Model, Refresh History — plus the full command palette (VSHermes: …) for every action including Set API Key
-- **Paste or drag-drop images** — saved to `$HERMES_HOME/attachments/` and referenced by path (works with text-only models via Hermes' vision fallback chain; `vsh.hermes.imageTransfer` setting)
-- **Slash command picker** (`/` in the input) with the catalog implemented client-side over the API surface, honestly marking TUI-only commands as unsupported
-- **Session history** tree view: open, continue, fork, delete
-- **Live tool activity** — `tool.started` / `tool.progress` / `tool.completed` rendered as cards, thinking rendered in a collapsible block
-- **Approval dialogs** for agent commands that require approval (`/v1/runs/{id}/approval`)
-- **Stop button** (aborts the stream + `POST /v1/runs/{id}/stop`)
-- **Model switching** per session (`POST /api/sessions/{id}/model`)
-- **Sync flagging**: the plugin diffs its pinned manifest against `GET /v1/capabilities` + `/health` and warns when it drifts out of sync with the Hermes it's talking to
+- Streaming markdown rendering; thinking shown in a collapsible block; tool
+  calls rendered as live cards (`tool.started` / `tool.progress` /
+  `tool.completed`)
+- **Stop** (aborts the stream and calls `POST /v1/runs/{id}/stop`)
+- **Approval dialogs** for agent actions that require it
+  (`POST /v1/runs/{id}/approval` — deny / once / session / always)
 
-## Architecture
+**Images**
+- Paste or drag-drop into the chat; chips show pending attachments
+- Default **file mode**: images are saved to `$HERMES_HOME/attachments/` and
+  sent as a path reference, so text-only main models still work via Hermes'
+  own vision fallback chain. `vsh.hermes.imageTransfer`: `auto | inline | file`
+  (`auto` = inline only when the model advertises vision capability)
+- `vsh.hermes.maxImageBytes` / `vsh.hermes.maxImageDimension` downscale
+  oversized pastes before sending
+
+**Slash commands** (`/` opens the picker)
+- Working actions (executed client-side against the API):
+  `/new` `/clear` `/model` `/stop` `/history` `/sessions` `/resume`
+  `/title` `/status` `/skills` `/fork` `/branch` `/help`
+  (`/title My Session` sets the session title via `PATCH /api/sessions/{id}`;
+  `/status` shows session info in chat)
+- Informational (sent to Hermes as plain text, flagged as such):
+  `/compact` `/retry` `/personality` `/save` `/compress` `/queue` `/steer`
+- TUI-only commands (`/undo` `/yolo` `/rollback` `/diff` `/goal` `/cron`
+  `/memory` `/mcp` `/plugins` …) are listed honestly as **unsupported** and
+  never sent as literal text
+
+**Sessions**
+- History tree view: open, continue, fork, delete; source badges
+  (terminal / vsh-hermes / gateway)
+- Terminal (CLI) sessions open with full history — one pool of sessions
+
+**Actions & navigation**
+- Chat header icons: New Chat, Check Sync, Switch Model, Refresh History
+- Every action also in the command palette (`VSHermes: …`), incl. Set API Key
+- Status bar: connected / offline / sync-warning + current model
+- Model switching per session (provider + model pickers, model lock)
+
+**Sync flagging**
+- The plugin ships a pinned manifest (minimum Hermes version, required
+  features, required endpoints) and diffs it against `GET /health` +
+  `GET /v1/capabilities` on connect. Verdicts — `ok` / `outdated` / `ahead` —
+  are always visible (banner + status bar + toast), so drift is flagged
+  instead of silently breaking.
+
+## Architecture & design decisions
 
 ```
 ┌─────────────────────────── VS Code ───────────────────────────┐
@@ -32,15 +80,45 @@ Hermes Agent chat for VS Code — a Claude-Code-style panel over the **Hermes AP
                     /v1/capabilities, /api/model/options, …
 ```
 
-All API traffic runs in the extension host; the webview never sees the API key.
+- **Transport = the API Server (Surface A), not the TUI WebSocket.** It is
+  the surface Hermes intends for external UIs — self-describing via
+  `/v1/capabilities`, and a stable contract.
+- **Webview panel, not a terminal wrapper.** VS Code's integrated terminal
+  can't deliver Shift+Enter (a decade-old upstream limitation), and terminal
+  image paste needs protocol hacks. A webview textarea gives multiline
+  input, paste/drag-drop and a real command picker natively.
+- **Slash commands are implemented client-side.** The API server is
+  OpenAI-compatible and does not interpret `/` text (verified against
+  0.20.0; only session `/model` overrides exist as an endpoint). The
+  catalog maps commands to endpoints and keeps TUI-only commands visible but
+  marked. If Hermes later exposes a slash RPC over the API, the catalog's
+  `kind` flags switch entries to `action` without UI changes.
+- **Images default to file mode.** Text-only main models reject inline
+  `image_url` parts with a 400; saving to `$HERMES_HOME/attachments/` and
+  referencing the path lets Hermes' vision fallback chain do the analysis,
+  and the image persists on disk.
+- **Sync manifest instead of silent drift.** The plugin pins the API surface
+  it was built against and diffs the live server's self-description against
+  it, so a Hermes upgrade can't break the plugin unnoticed.
+- **Zero-config connection.** The API key and base URL are auto-discovered
+  (SecretStorage → `VSHERMES_API_KEY` → `$HERMES_HOME/.env`, mirroring
+  Hermes' own resolution order); a stale `~/.hermes` can't shadow the live
+  config. Fallback: `VSHermes: Set API Key` (stored in SecretStorage, never
+  in settings.json).
+- **The webview never holds the API key.** All API traffic runs in the
+  extension host.
+- **Activity-bar icon:** VS Code renders container icons as monochrome
+  masks tinted by the theme, so the mark must read at 24px with real
+  negative space. Note: the container icon is cached client-side keyed to
+  the extension install path — any icon change requires a version bump to
+  reach the running UI.
 
 ## Requirements
 
-- VS Code ≥ 1.85 (works in Cursor/Windsurf — same extension API)
+- VS Code ≥ 1.85 (same extension API works in Cursor/Windsurf)
 - Hermes with the gateway **api_server** platform enabled:
 
   `.env`:
-
   ```
   API_SERVER_ENABLED=true
   API_SERVER_KEY=<your-secret-key-min-8-chars>
@@ -48,27 +126,36 @@ All API traffic runs in the extension host; the webview never sees the API key.
   API_SERVER_PORT=8642
   ```
 
-  then `hermes gateway run` (or `hermes gateway install` as a service).
+  then `hermes gateway run` (or `hermes gateway install` for a background
+  service). Restart after config changes: `hermes gateway run --replace`.
 
 ## Install (development)
 
 ```bash
 npm install
-npm run compile          # tsc + esbuild → dist/extension.js, dist/media/chat.js
+npm run compile          # tsc + esbuild → dist/extension.js + dist/media/chat.js
+npm test                 # unit + contract-mock tests (no gateway needed)
+npm run test:live        # live integration against a real API server
+                         # (key auto-read from $HERMES_HOME/.env)
 ```
 
-Press **F5** in VS Code (Extension Development Host), or package:
+Package and install into a remote/dev-container extension host (no F5 —
+there is no desktop GUI in this environment):
 
 ```bash
-npm run package          # produces vsh-hermes-0.1.0.vsix
-# Install from VSIX: Extensions → … → Install from VSIX…
+npx @vscode/vsce package          # dist/vsh-hermes-<version>.vsix
+code --install-extension dist/vsh-hermes-<version>.vsix --force
+# then: Command Palette → Developer: Reload Window
 ```
 
-First launch: the extension prompts for the API key (`API_SERVER_KEY`) and stores it in VS Code SecretStorage. Settings: `vsh.hermes.baseUrl` (default `http://127.0.0.1:8642`), `checkSyncOnStartup`, `maxImageBytes`, `maxImageDimension`.
+First launch: the API key is auto-discovered from the Hermes `.env`; only
+prompted for if none is found anywhere.
 
-## Sync flagging (out-of-sync detection)
+Settings: `vsh.hermes.baseUrl` (default `http://127.0.0.1:8642`),
+`vsh.hermes.checkSyncOnStartup`, `vsh.hermes.maxImageBytes`,
+`vsh.hermes.maxImageDimension`, `vsh.hermes.imageTransfer`.
 
-The plugin pins a manifest (`src/api/sync.ts`): minimum Hermes version, required features, required endpoints. On connect it fetches `/health` (version) and `/v1/capabilities` (self-described surface) and diffs:
+## Sync verdicts
 
 | Verdict  | Meaning                                                               | Action                                        |
 | -------- | --------------------------------------------------------------------- | --------------------------------------------- |
@@ -77,55 +164,8 @@ The plugin pins a manifest (`src/api/sync.ts`): minimum Hermes version, required
 | ahead    | Hermes advertises features the plugin doesn't know                    | informational — plugin still works            |
 | unknown  | server unreachable / bad key                                          | fix connection                                |
 
-Shown as a banner in the chat panel + status bar warning; re-checkable via the `VSHermes: Check Hermes Sync` command, the banner button, or `npm run check-sync` from a terminal:
-
-```
-node scripts/check-sync.mjs
-```
-
-## Slash commands
-
-| Category      | Commands                                                                  | Behaviour                                                                   |
-| ------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| action        | `/new /clear /model /stop /history /sessions /resume /skills /fork /help` | executed client-side against the API (new session, model lock, run stop, …) |
-| informational | `/compact /retry /personality /prompt`                                    | sent to Hermes as plain text (the API server does not interpret slash text) |
-| unsupported   | `/undo /yolo /export /doctor /memory /snapshot /mcp /plugins`             | shown with a TUI-only notice; never sent as literal text                    |
-
-Unknown commands are not sent as text — the picker only offers the catalog.
-
-## Slash command catalogue — why client-side
-
-The API server is OpenAI-compatible and does **not** interpret `/` text (verified against 0.20.0 — session `/model` overrides exist as an endpoint; nothing else). VSHermes therefore maps commands to endpoints and keeps the TUI-only remainder visible but marked. If Hermes later exposes a slash-command RPC over the API, the catalog's `kind` flags switch it to `action` without UI changes.
-
-## Contract verification (diagnosis table)
-
-Every endpoint the plugin uses was probed against the live Hermes **0.20.0** gateway before the client was written:
-
-| Hop | Endpoint                                                 | Verified                                                                                                                                                                |
-| --- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | GET /health                                              | ✅ 200 {status, version}                                                                                                                                                |
-| 2   | GET /v1/capabilities                                     | ✅ features + endpoints map                                                                                                                                             |
-| 3   | GET /api/sessions?limit=&order=                          | ✅ list + usage fields                                                                                                                                                  |
-| 4   | POST /api/sessions                                       | ✅ 201; 400 `invalid_title` on duplicates (titles unique)                                                                                                               |
-| 5   | POST /api/sessions/{id}/chat {message}                   | ✅ completion + usage + runtime                                                                                                                                         |
-| 6   | POST /api/sessions/{id}/chat/stream                      | ✅ SSE: run.started → message.started → assistant.delta → tool.started → tool.progress (\_thinking) → tool.completed → assistant.completed → run.completed → done       |
-| 7   | GET /api/sessions/{id}/messages                          | ✅ {data, pagination}                                                                                                                                                   |
-| 8   | POST /api/sessions/{id}/model                            | ✅ model_lock accepted                                                                                                                                                  |
-| 9   | POST /api/sessions/{id}/fork                             | ✅ 201, auto-suffixed title                                                                                                                                             |
-| 10  | POST /v1/runs {model, input}                             | ✅ 202 {run_id}                                                                                                                                                         |
-| 11  | GET /v1/runs/{id}                                        | ✅ status                                                                                                                                                               |
-| 12  | POST /v1/runs/{id}/stop                                  | ✅                                                                                                                                                                      |
-| 13  | POST /v1/runs/{id}/approval                              | ✅ endpoint responds; exact event name inferred from `approval_events` capability — **❓** not observed live (this deployment's terminal path did not require approval) |
-| 14  | multimodal image parts (data: URLs)                      | ✅ accepted + routed to vision auxiliary (test image deliberately minimal)                                                                                              |
-| 15  | /v1/models, /v1/skills, /v1/toolsets, /api/model/options | ✅                                                                                                                                                                      |
-
-## Tests
-
-```bash
-npm test                 # unit + contract-mock tests (no gateway needed)
-npm run test:live        # live integration against a real API server
-                         # (VSHERMES_LIVE=1; key auto-read from $HERMES_HOME/.env)
-```
+Re-check anytime via the header icon, the `VSHermes: Check Hermes Sync`
+command, or `npm run check-sync` (standalone script).
 
 ## Roadmap
 
