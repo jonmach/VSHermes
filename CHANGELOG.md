@@ -1,6 +1,21 @@
 # Changelog
 
-## [0.1.0] — 2026-08-12
+## 0.1.1 (2026-08-12)
+
+- **Activity-bar icon fixed — root cause: client-side cache keyed to the
+  extension install path.** The white square was NOT the icon file: six
+  different files (badge, silhouette, PNG, official SVG, simplified redraw)
+  all rendered identically because the VS Code client caches the container
+  icon against the extension path (`vsh.vsh-hermes-0.1.0`), which never
+  changed. The diagnostic chain: pixel-decoded user screenshots → identified
+  every activity-bar item by shape (Claude, Cline, ACP all rendering fine) →
+  the white square occupied the only slot matching none of the shipped
+  icons → confirmed the file was never the variable. Bumping to 0.1.1
+  creates a new install path and forces a fresh icon load. Confirmed fixed.
+  **Lesson: for VS Code activity-bar container icons, a version bump is
+  required for ANY icon change to reach the running UI.**
+
+## 0.1.0 (2026-08-12)
 
 Initial release.
 
