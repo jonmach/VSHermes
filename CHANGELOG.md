@@ -38,10 +38,12 @@ Initial release.
 - **Home tab added** — action buttons (New Chat, Check Sync, Switch Model,
   History, Set API Key, Refresh) moved out of the Chat/History tab headers
   into a dedicated Home tab above Chat; future actions slot into it.
-- **Official Hermes logo** — monochrome caduceus silhouette (transparent
-  background) built from the project's canonical HERMES_CADUCEUS art;
-  activity-bar icons are theme-tinted masks, so the icon must be a
-  single-color mark, not a colored badge.
+- **Official Hermes logo** — the activity-bar icon is now the official
+  `favicon-32x32.png` from the Hermes website assets (caduceus on circular
+  badge). Lesson recorded: VS Code renders activity-bar container icons as
+  theme-tinted masks and its SVG icon parser chokes on gradients/groups/
+  strokes — hand-drawn SVGs render as solid blocks. A plain PNG renders
+  as-is and is the reliable choice.
 - **Welcome screen removed from the Chat tab** — the centered New chat /
   Check sync buttons it carried confused the layout (those actions live in
   the Home tab now); replaced with a slim inline hint when no session exists.
