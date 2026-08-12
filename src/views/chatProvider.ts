@@ -47,7 +47,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     );
     const csp = [
       `default-src 'none'`,
-      `script-src 'nonce-${nonce}'`,
+      `script-src 'nonce-${nonce}' ${webview.cspSource}`,
       `style-src 'unsafe-inline'`,
       `img-src ${webview.cspSource} data: https:`,
       `font-src ${webview.cspSource}`,

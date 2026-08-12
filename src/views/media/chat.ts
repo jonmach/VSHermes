@@ -27,10 +27,32 @@ declare function acquireVsCodeApi(): {
 };
 
 const vscode = acquireVsCodeApi();
+const post = (msg: WebviewMessage): void => {
+  vscode.postMessage(msg);
+};
+
+// Boot diagnostics — report any script-level failure to the host so a dead
+// webview is never silent (the host logs it and shows an error toast).
+window.addEventListener('error', (e) => {
+  try {
+    post({ type: 'diag', level: 'error', message: `webview error: ${e.message}` });
+  } catch {
+    /* host unreachable */
+  }
+});
+window.addEventListener('unhandledrejection', (e) => {
+  try {
+    const reason = (e as PromiseRejectionEvent).reason;
+    post({ type: 'diag', level: 'error', message: `webview unhandled rejection: ${String(reason ?? '')}` });
+  } catch {
+    /* host unreachable */
+  }
+});
 
 // ── DOM refs ───────────────────────────────────────────────────────
 
-const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
+const $ = <T extends HTMLElement>(id: string): T =>
+  document.getElementById(id.replace(/^#/, '')) as T;
 const messagesEl = $('#messages');
 const welcomeEl = $('#welcome');
 const welcomeSub = $('#welcome-sub');
@@ -620,10 +642,6 @@ function onHostMessage(msg: HostMessage): void {
 }
 
 // ── wiring ─────────────────────────────────────────────────────────
-
-function post(msg: WebviewMessage): void {
-  vscode.postMessage(msg);
-}
 
 window.addEventListener('message', (e: MessageEvent<HostMessage>) => {
   onHostMessage(e.data);

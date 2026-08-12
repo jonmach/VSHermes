@@ -32,8 +32,8 @@ import { ChatViewProvider } from './views/chatProvider';
 import { HistoryProvider } from './views/historyProvider';
 import type { WebviewMessage } from './views/media/protocol';
 
-export function activate(context: vscode.ExtensionContext): void {
-  new VSHermes(context);
+export function activate(context: vscode.ExtensionContext): VSHermes {
+  return new VSHermes(context);
 }
 
 class VSHermes {
@@ -49,6 +49,18 @@ class VSHermes {
   private syncReport: SyncReport | null = null;
   private health: HealthStatus | null = null;
   private caps: Capabilities | null = null;
+  private readonly log = vscode.window.createOutputChannel('VSHermes');
+
+  /** Observable test surface — exposed via extension.exports. */
+  get lastSyncReport(): SyncReport | null {
+    return this.syncReport;
+  }
+  get isConnected(): boolean {
+    return this.client !== null && this.health !== null;
+  }
+  get currentSessionId(): string | null {
+    return this.sessionId;
+  }
 
   constructor(context: vscode.ExtensionContext) {
     this.context = context;
@@ -59,6 +71,7 @@ class VSHermes {
     context.subscriptions.push(
       this.statusBar,
       this.view,
+      this.log,
       vscode.window.registerWebviewViewProvider('vsh.hermes.chat', this.view, {
         webviewOptions: { retainContextWhenHidden: true },
       }),
@@ -80,13 +93,18 @@ class VSHermes {
       vscode.commands.registerCommand('vsh.hermes.openSession', (id: string) => void this.openSession(id)),
       vscode.commands.registerCommand('vsh.hermes.forkSession', (id?: string) => void this.forkSession(id)),
       vscode.commands.registerCommand('vsh.hermes.deleteSession', (id?: string) => void this.deleteSession(id)),
-      vscode.commands.registerCommand('vsh.hermes.checkSync', () => void this.runSyncCheck(true)),
+      vscode.commands.registerCommand('vsh.hermes.checkSync', () => void this.checkSyncCommand()),
       vscode.commands.registerCommand('vsh.hermes.setApiKey', () => void this.setApiKeyFlow()),
       vscode.commands.registerCommand('vsh.hermes.chooseModel', () => void this.chooseModel()),
     );
 
     this.statusBar.connecting();
+    this.log.appendLine(`VSHermes ${this.pluginVersion} activating… baseUrl=${getBaseUrl()}`);
     void this.connectAndSync();
+  }
+
+  private logInfo(msg: string): void {
+    this.log.appendLine(`[${new Date().toISOString().slice(11, 19)}] ${msg}`);
   }
 
   private get pluginVersion(): string {
@@ -101,10 +119,12 @@ class VSHermes {
       this.health = await c.health();
       this.caps = await c.capabilities();
       this.statusBar.connected(this.health.version, this.caps.model);
+      this.logInfo(`connected to Hermes ${this.health.version} at ${getBaseUrl()}`);
     } catch (err) {
       this.health = null;
       this.caps = null;
       this.statusBar.offline((err as Error).message);
+      this.logInfo(`connection failed: ${(err as Error).message}`);
       this.view.post({ type: 'state', connected: false, baseUrl: getBaseUrl(), syncReport: null, sessionId: null, model: null, sessions: [], slashCommands: SLASH_COMMANDS, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
       return;
     }
@@ -149,6 +169,11 @@ class VSHermes {
     }
   }
 
+  private async checkSyncCommand(): Promise<void> {
+    await this.runSyncCheck(true);
+    await this.notifySyncResult();
+  }
+
   // ── sync check (out-of-sync flagging) ─────────────────────────────
 
   private async runSyncCheck(force = false): Promise<void> {
@@ -181,7 +206,24 @@ class VSHermes {
     } else if (r.status === 'ok' || r.status === 'ahead') {
       this.statusBar.connected(this.health?.version ?? r.hermesVersion, this.caps?.model ?? null);
     }
+    this.logInfo(`sync check: ${r.status} — ${r.messages.join(' ')}`);
     this.view.post({ type: 'sync', report: r });
+  }
+
+  /** Visible feedback for the Check Sync command — silent success was a UX gap. */
+  private async notifySyncResult(): Promise<void> {
+    const r = this.syncReport;
+    if (!r) return;
+    const hermes = r.hermesVersion ? `Hermes ${r.hermesVersion}` : 'Hermes';
+    if (r.status === 'ok') {
+      await vscode.window.showInformationMessage(`VSHermes ${r.pluginVersion} is in sync with ${hermes}.`);
+    } else if (r.status === 'outdated') {
+      await vscode.window.showWarningMessage(`VSHermes out of sync with ${hermes}: ${r.messages.join(' ')}`, 'Check details');
+    } else if (r.status === 'ahead') {
+      await vscode.window.showInformationMessage(`VSHermes is older than ${hermes}: ${r.messages.join(' ')}`);
+    } else {
+      await vscode.window.showErrorMessage('VSHermes sync check failed: Hermes API server unreachable.');
+    }
   }
 
   // ── sessions ──────────────────────────────────────────────────────
@@ -292,6 +334,7 @@ class VSHermes {
         return;
       }
       this.view.post({ type: 'stream:ended', sessionId: sid });
+      this.logInfo(`stream ended (session ${sid})`);
       void this.refreshSessionAfterRun(sid);
     } catch (err) {
       this.reportError(err);
@@ -301,6 +344,7 @@ class VSHermes {
   private onStreamEvent(event: StreamEvent): void {
     if (event.type === 'run.started' && event.run_id) {
       this.activeRunId = event.run_id;
+      this.logInfo(`run started: ${event.run_id}`);
     }
     this.view.post({ type: 'stream', event });
   }
@@ -389,6 +433,7 @@ class VSHermes {
   private async handleWebviewMessage(msg: WebviewMessage): Promise<void> {
     switch (msg.type) {
       case 'ready':
+        this.logInfo('webview booted (ready received)');
         this.view.post({
           type: 'state',
           connected: this.client !== null,
@@ -405,6 +450,9 @@ class VSHermes {
         if (getCheckSyncOnStartup()) void this.runSyncCheck(false);
         break;
       case 'send':
+        this.logInfo(
+          `send received (session ${this.sessionId ?? 'new'}): ${previewOf(msg.parts)}`,
+        );
         await this.send(msg.parts, msg.sessionId);
         break;
       case 'newSession':
@@ -450,6 +498,12 @@ class VSHermes {
         break;
       case 'focusHistory':
         this.focusHistory();
+        break;
+      case 'diag':
+        this.logInfo(`webview [${msg.level}]: ${msg.message}`);
+        if (msg.level === 'error') {
+          await vscode.window.showErrorMessage(`VSHermes webview: ${msg.message}`);
+        }
         break;
     }
   }
@@ -509,11 +563,23 @@ class VSHermes {
 
   private reportError(err: unknown): void {
     if (err instanceof HermesApiError) {
-      this.view.post({ type: 'error', message: `Hermes API error (${err.status}): ${err.message}` });
+      const msg = `Hermes API error (${err.status}): ${err.message}`;
+      this.logInfo(msg);
+      this.view.post({ type: 'error', message: msg });
     } else {
-      this.view.post({ type: 'error', message: (err as Error).message });
+      const msg = (err as Error).message;
+      this.logInfo(`error: ${msg}`);
+      this.view.post({ type: 'error', message: msg });
     }
   }
+}
+
+/** Short preview of an outbound message for the log. */
+function previewOf(parts: MessagePart[]): string {
+  const text = parts.find((p) => p.type === 'text')?.text ?? '';
+  const images = parts.filter((p) => p.type === 'image_url').length;
+  const t = text.replace(/\s+/g, ' ').trim();
+  return `${t.slice(0, 80)}${t.length > 80 ? '…' : ''}${images ? ` [+${images} image${images > 1 ? 's' : ''}]` : ''}`;
 }
 
 export function deactivate(): void {
