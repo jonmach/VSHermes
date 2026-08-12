@@ -30,6 +30,7 @@ import {
   promptForApiKey,
 } from './config';
 import { SLASH_COMMANDS, SlashHandlerId } from './slash/commands';
+import { sessionIdFromArg } from './sessionArg';
 import { StatusBar } from './statusbar';
 import { resolveHermesEnv } from './hermesEnv';
 import { buildMessage, resolveImageMode } from './imageTransfer';
@@ -95,9 +96,18 @@ class VSHermes {
       vscode.commands.registerCommand('vsh.hermes.newSession', () => void this.newSession()),
       vscode.commands.registerCommand('vsh.hermes.openHistory', () => this.focusHistory()),
       vscode.commands.registerCommand('vsh.hermes.refreshSessions', () => void this.listSessions()),
-      vscode.commands.registerCommand('vsh.hermes.openSession', (id: string) => void this.openSession(id)),
-      vscode.commands.registerCommand('vsh.hermes.forkSession', (id?: string) => void this.forkSession(id)),
-      vscode.commands.registerCommand('vsh.hermes.deleteSession', (id?: string) => void this.deleteSession(id)),
+      vscode.commands.registerCommand('vsh.hermes.openSession', (arg: unknown) => {
+        const id = sessionIdFromArg(arg);
+        if (id) void this.openSession(id);
+      }),
+      vscode.commands.registerCommand('vsh.hermes.forkSession', (arg?: unknown) => {
+        const id = sessionIdFromArg(arg);
+        if (id) void this.forkSession(id);
+      }),
+      vscode.commands.registerCommand('vsh.hermes.deleteSession', (arg?: unknown) => {
+        const id = sessionIdFromArg(arg);
+        if (id) void this.deleteSession(id);
+      }),
       vscode.commands.registerCommand('vsh.hermes.checkSync', () => void this.checkSyncCommand()),
       vscode.commands.registerCommand('vsh.hermes.setApiKey', () => void this.setApiKeyFlow()),
       vscode.commands.registerCommand('vsh.hermes.chooseModel', () => void this.chooseModel()),

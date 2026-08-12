@@ -22,6 +22,12 @@ export class SessionTreeItem extends vscode.TreeItem {
     this.description = `${source} · ${session.model ?? '?'} · ${session.message_count} msgs · ${rel}`;
     this.contextValue = 'session';
     this.iconPath = new vscode.ThemeIcon('comment-discussion');
+    // Row click opens the session (command receives the string id via arguments).
+    this.command = {
+      command: 'vsh.hermes.openSession',
+      title: 'Open Session',
+      arguments: [session.id],
+    };
   }
 }
 
