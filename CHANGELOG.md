@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.0.0 (2026-08-12)
+
+- **Versioning reset.** The product is one release line, now at 2.0.0.
+  Incremental 0.1.x builds were the same product at increasing build
+  numbers; this marks the current build as 2.0.0 (BETA) as published in
+  README + package.json. No functional change in this bump itself — see
+  0.1.1–0.1.6 below for what the build contains.
+- **Marketplace prep.** Added `repository` / `bugs` / `homepage` fields,
+  128×128 marketplace icon (`media/icon-marketplace.png`), MIT `LICENSE`,
+  and BETA branding in the listing metadata. README rewritten to describe
+  current functionality and design decisions.
+
 ## 0.1.6 (2026-08-12)
 
 - **`/title` is now a working slash command** — it was missing from the

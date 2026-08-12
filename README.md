@@ -1,9 +1,8 @@
 # VSHermes — Hermes Agent chat for VS Code
 
-> **Status: BETA.** One product, version 0.1.x — incremental builds of the same
-> thing, each re-verified against the pinned Hermes API surface. This README
-> describes current functionality, not history (see CHANGELOG.md for the
-> change log).
+> **Status: BETA.** One product, current build 2.0.0 — each build re-verified
+> against the pinned Hermes API surface. This README describes current
+> functionality, not history (see CHANGELOG.md for the change log).
 
 A Claude-Code-style chat panel for [Hermes Agent](https://hermes-agent.nousresearch.com),
 running over the **Hermes API Server** — not a terminal wrapper. The chat

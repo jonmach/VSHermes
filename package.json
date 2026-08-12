@@ -2,9 +2,17 @@
   "name": "vsh-hermes",
   "displayName": "VSHermes (Beta)",
   "description": "[BETA] Hermes Agent chat for VS Code — full agent UI (multiline input, image paste, slash commands, history, tool activity, approvals) over the Hermes API Server.",
-  "version": "0.1.6",
+  "version": "2.0.0",
   "publisher": "vsh",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jonmach/VSHermes.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jonmach/VSHermes/issues"
+  },
+  "homepage": "https://github.com/jonmach/VSHermes",
   "engines": {
     "vscode": "^1.85.0"
   },
