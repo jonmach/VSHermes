@@ -625,6 +625,11 @@ function onHostMessage(msg: HostMessage): void {
   switch (msg.type) {
     case 'state':
       state.connected = msg.connected;
+      if (msg.sessionId !== state.sessionId) {
+        // The chat window shows the current session's messages only — any
+        // session switch (/new, /clear, delete-current, …) resets the view.
+        renderMessages([]);
+      }
       state.sessionId = msg.sessionId;
       state.model = msg.model;
       state.syncReport = msg.syncReport;

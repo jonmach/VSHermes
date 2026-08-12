@@ -171,6 +171,79 @@ describe('webview bundle (dist/media/chat.js)', () => {
     expect(dom.window.document.getElementById('no-session-hint')).toBeNull();
   });
 
+  it('/new (state with a different sessionId) clears the message list', () => {
+    const { dom, post } = bootWebview();
+    const base = {
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      syncReport: null,
+      sessions: [],
+      slashCommands: [],
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    };
+    post({ ...base, sessionId: 's1', model: 'm1' } as unknown as HostMsg);
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [{ role: 'user', content: 'hello old session' }],
+    } as unknown as HostMsg);
+    const messages = dom.window.document.getElementById('messages')!;
+    expect(messages.textContent).toContain('hello old session');
+    // /new → host creates a new session and posts state with the new id
+    post({ ...base, sessionId: 's2', model: 'm1' } as unknown as HostMsg);
+    expect(messages.textContent).not.toContain('hello old session');
+  });
+
+  it('keeps the message list when state repeats the same sessionId', () => {
+    const { dom, post } = bootWebview();
+    const base = {
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      syncReport: null,
+      sessions: [],
+      slashCommands: [],
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    };
+    post({ ...base, sessionId: 's1', model: 'm1' } as unknown as HostMsg);
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [{ role: 'user', content: 'stays put' }],
+    } as unknown as HostMsg);
+    // e.g. a sync re-check posts state again for the same session
+    post({ ...base, sessionId: 's1', model: 'm1' } as unknown as HostMsg);
+    expect(dom.window.document.getElementById('messages')!.textContent).toContain('stays put');
+  });
+
+  it('clears the list and shows the start hint when the current session is deleted', () => {
+    const { dom, post } = bootWebview();
+    const base = {
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      syncReport: null,
+      sessions: [],
+      slashCommands: [],
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    };
+    post({ ...base, sessionId: 's1', model: 'm1' } as unknown as HostMsg);
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [{ role: 'user', content: 'bye bye' }],
+    } as unknown as HostMsg);
+    expect(dom.window.document.getElementById('messages')!.textContent).toContain('bye bye');
+    // deleteSession on the current session → state with sessionId null
+    post({ ...base, sessionId: null, model: null } as unknown as HostMsg);
+    expect(dom.window.document.getElementById('messages')!.textContent).not.toContain('bye bye');
+    expect(dom.window.document.getElementById('no-session-hint')).not.toBeNull();
+  });
+
   it('renders the sync banner for an outdated report', () => {
     const { dom, post } = bootWebview();
     post({

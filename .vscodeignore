@@ -9,6 +9,7 @@ vitest.config.*
 scripts/**
 node_modules/**
 .gitignore
+.github/**
 todo.txt
 **/*.map
 !dist/extension.js
