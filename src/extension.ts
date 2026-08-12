@@ -35,6 +35,7 @@ import { StatusBar } from './statusbar';
 import { resolveHermesEnv } from './hermesEnv';
 import { buildMessage, resolveImageMode } from './imageTransfer';
 import { ChatViewProvider } from './views/chatProvider';
+import { HomeViewProvider } from './views/homeProvider';
 import { HistoryProvider } from './views/historyProvider';
 import type { WebviewMessage } from './views/media/protocol';
 
@@ -46,6 +47,7 @@ class VSHermes {
   readonly context: vscode.ExtensionContext;
   readonly statusBar: StatusBar;
   readonly view: ChatViewProvider;
+  readonly home: HomeViewProvider;
   readonly history: HistoryProvider;
 
   private client: HermesClient | null = null;
@@ -72,13 +74,18 @@ class VSHermes {
     this.context = context;
     this.statusBar = new StatusBar('vsh.hermes.focusChat');
     this.view = new ChatViewProvider(context.extensionUri);
+    this.home = new HomeViewProvider(context.extensionUri);
     this.history = new HistoryProvider(() => this.listSessions());
 
     context.subscriptions.push(
       this.statusBar,
       this.view,
+      this.home,
       this.log,
       vscode.window.registerWebviewViewProvider('vsh.hermes.chat', this.view, {
+        webviewOptions: { retainContextWhenHidden: true },
+      }),
+      vscode.window.registerWebviewViewProvider('vsh.hermes.home', this.home, {
         webviewOptions: { retainContextWhenHidden: true },
       }),
       vscode.window.createTreeView('vsh.hermes.history', {
@@ -86,6 +93,7 @@ class VSHermes {
         showCollapseAll: false,
       }),
       this.view.onDidReceiveMessage((msg) => void this.handleWebviewMessage(msg)),
+      this.home.onDidReceiveMessage((msg) => void this.handleHomeMessage(msg)),
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration('vsh.hermes.baseUrl')) {
           this.client = null;
@@ -135,6 +143,7 @@ class VSHermes {
       this.caps = await c.capabilities();
       this.statusBar.connected(this.health.version, this.caps.model);
       this.logInfo(`connected to Hermes ${this.health.version} at ${getBaseUrl()}`);
+      this.pushHomeState();
     } catch (err) {
       this.health = null;
       this.caps = null;
@@ -148,6 +157,7 @@ class VSHermes {
           ? `Cannot reach Hermes at ${getBaseUrl()} — is the gateway running? Try: hermes gateway run`
           : msg,
       });
+      this.pushHomeState();
       this.view.post({ type: 'state', connected: false, baseUrl: getBaseUrl(), syncReport: null, sessionId: null, model: null, sessions: [], slashCommands: SLASH_COMMANDS, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
       return;
     }
@@ -504,6 +514,52 @@ class VSHermes {
   }
 
   // ── webview message routing ───────────────────────────────────────
+
+  /** Push the connection state to the Home view (status line). */
+  private pushHomeState(): void {
+    this.home.post({
+      type: 'state',
+      connected: this.health !== null,
+      baseUrl: getBaseUrl(),
+      syncReport: this.syncReport,
+      sessionId: this.sessionId,
+      model: this.caps?.model ?? null,
+      sessions: [],
+      slashCommands: [],
+      maxImageBytes: 0,
+      maxImageDimension: 0,
+    });
+  }
+
+  private async handleHomeMessage(msg: import('./views/media/protocol').WebviewMessage): Promise<void> {
+    switch (msg.type) {
+      case 'ready':
+        this.logInfo('home view booted');
+        this.pushHomeState();
+        break;
+      case 'newSession':
+        await this.newSession();
+        break;
+      case 'checkSync':
+        await this.checkSyncCommand();
+        break;
+      case 'chooseModel':
+        await this.chooseModel();
+        break;
+      case 'focusHistory':
+        this.focusHistory();
+        break;
+      case 'listSessions':
+        void this.listSessions();
+        break;
+      case 'setApiKey':
+        await this.setApiKeyFlow();
+        break;
+      default:
+        // Chat-only messages are not expected here; ignore silently.
+        break;
+    }
+  }
 
   private async handleWebviewMessage(msg: WebviewMessage): Promise<void> {
     switch (msg.type) {

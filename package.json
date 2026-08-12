@@ -34,6 +34,11 @@
       "vsh-hermes": [
         {
           "type": "webview",
+          "id": "vsh.hermes.home",
+          "name": "Home"
+        },
+        {
+          "type": "webview",
           "id": "vsh.hermes.chat",
           "name": "Chat"
         },
@@ -90,23 +95,6 @@
       }
     ],
     "menus": {
-      "view/title": [
-        {
-          "command": "vsh.hermes.newSession",
-          "when": "view == vsh.hermes.chat",
-          "group": "navigation"
-        },
-        {
-          "command": "vsh.hermes.checkSync",
-          "when": "view == vsh.hermes.chat",
-          "group": "navigation"
-        },
-        {
-          "command": "vsh.hermes.refreshSessions",
-          "when": "view == vsh.hermes.history",
-          "group": "navigation"
-        }
-      ],
       "view/item/context": [
         {
           "command": "vsh.hermes.openSession",

@@ -19,8 +19,6 @@ const WEBVIEW_HTML = `<!DOCTYPE html><html><body>
     <span id="conn"></span>
     <span class="spacer"></span>
     <span id="model-badge" class="model-badge"></span>
-    <button id="btn-history"></button>
-    <button id="btn-new"></button>
   </div>
   <div id="messages"></div>
   <div id="welcome" hidden><div id="welcome-sub"></div>

@@ -737,8 +737,6 @@ sendBtn.addEventListener('click', () => {
   }
 });
 
-$('#btn-new').addEventListener('click', () => post({ type: 'newSession' }));
-$('#btn-history').addEventListener('click', () => post({ type: 'focusHistory' }));
 $('#btn-welcome-new').addEventListener('click', () => post({ type: 'newSession' }));
 $('#btn-welcome-sync').addEventListener('click', () => post({ type: 'checkSync' }));
 modelBadge.addEventListener('click', () => post({ type: 'chooseModel' }));

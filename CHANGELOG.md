@@ -35,4 +35,10 @@ Initial release.
 - **Check Sync is now visibly responsive on every path** — all triggers
   (command, banner button, welcome button) toast the verdict, and the banner
   shows the result for every status, including a green "✓ In sync" bar.
+- **Home tab added** — action buttons (New Chat, Check Sync, Switch Model,
+  History, Set API Key, Refresh) moved out of the Chat/History tab headers
+  into a dedicated Home tab above Chat; future actions slot into it.
+- **Official Hermes logo** — replaced the placeholder icon with a vector
+  reproduction of the brand mark (white caduceus on a black circular badge,
+  from the Hermes website assets).
 

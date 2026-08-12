@@ -159,8 +159,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     <span id="conn"></span>
     <span class="spacer"></span>
     <span id="model-badge" class="model-badge" title="Switch model"></span>
-    <button id="btn-history" title="History">&#9776;</button>
-    <button id="btn-new" title="New chat">&#65291;</button>
   </div>
   <div id="messages"></div>
   <div id="welcome" hidden>

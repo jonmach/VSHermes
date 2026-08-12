@@ -42,6 +42,7 @@ export type WebviewMessage =
   | { type: 'setModel'; model: string }
   | { type: 'chooseModel' }
   | { type: 'skills' }
+  | { type: 'setApiKey' }
   | { type: 'listSessions' }
   | { type: 'checkSync' }
   | { type: 'focusHistory' }

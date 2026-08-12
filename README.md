@@ -3,7 +3,8 @@
 Hermes Agent chat for VS Code — a Claude-Code-style panel over the **Hermes API Server** (Surface A), not a terminal wrapper.
 
 - Multiline input: **Enter** sends, **Shift+Enter** inserts a newline
-- **Paste or drag-drop images** — sent as data-URL image parts, routed to Hermes vision
+- **Home tab** (first tab in the sidebar): action hub with New Chat, Check Sync, Switch Model, History, Set API Key and Refresh — keeps the Chat/History tab headers clean, room for future actions
+- **Paste or drag-drop images** — saved to `$HERMES_HOME/attachments/` and referenced by path (works with text-only models via Hermes' vision fallback chain; `vsh.hermes.imageTransfer` setting)
 - **Slash command picker** (`/` in the input) with the catalog implemented client-side over the API surface, honestly marking TUI-only commands as unsupported
 - **Session history** tree view: open, continue, fork, delete
 - **Live tool activity** — `tool.started` / `tool.progress` / `tool.completed` rendered as cards, thinking rendered in a collapsible block
