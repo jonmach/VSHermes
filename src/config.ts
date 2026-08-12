@@ -7,13 +7,48 @@
  */
 
 import * as vscode from 'vscode';
+import { resolveHermesEnv } from './hermesEnv';
 
 const SECRET_KEY = 'vsh.hermes.apiKey';
 
+/**
+ * Effective API server base URL:
+ * explicit setting (vsh.hermes.baseUrl) → Hermes .env (API_SERVER_HOST:PORT)
+ * → default http://127.0.0.1:8642.
+ */
 export function getBaseUrl(): string {
   const cfg = vscode.workspace.getConfiguration('vsh.hermes');
-  const url = cfg.get<string>('baseUrl', 'http://127.0.0.1:8642').trim();
-  return url.replace(/\/+$/, '');
+  const inspected = cfg.inspect<string>('baseUrl');
+  const explicit = inspected?.globalValue ?? inspected?.workspaceValue;
+  if (explicit && explicit.trim()) {
+    return explicit.trim().replace(/\/+$/, '');
+  }
+  const hermesEnv = resolveHermesEnv();
+  if (hermesEnv) return hermesEnv.baseUrl;
+  return 'http://127.0.0.1:8642';
+}
+
+/** Where the API key was found (for logging/diagnostics). */
+export type KeySource = 'secret' | 'env-var' | 'hermes-env' | 'none';
+
+export interface ApiKeyResult {
+  key: string | undefined;
+  source: KeySource;
+}
+
+/**
+ * API key resolution chain:
+ * SecretStorage → VSHERMES_API_KEY env var → Hermes .env (API_SERVER_KEY)
+ * → undefined (the caller may prompt).
+ */
+export async function getApiKey(context: vscode.ExtensionContext): Promise<ApiKeyResult> {
+  const stored = await context.secrets.get(SECRET_KEY);
+  if (stored) return { key: stored, source: 'secret' };
+  const envKey = process.env.VSHERMES_API_KEY;
+  if (envKey) return { key: envKey, source: 'env-var' };
+  const hermesEnv = resolveHermesEnv();
+  if (hermesEnv) return { key: hermesEnv.apiKey, source: 'hermes-env' };
+  return { key: undefined, source: 'none' };
 }
 
 export function getCheckSyncOnStartup(): boolean {
@@ -26,14 +61,6 @@ export function getMaxImageBytes(): number {
 
 export function getMaxImageDimension(): number {
   return vscode.workspace.getConfiguration('vsh.hermes').get<number>('maxImageDimension', 4096);
-}
-
-export async function getApiKey(context: vscode.ExtensionContext): Promise<string | undefined> {
-  const stored = await context.secrets.get(SECRET_KEY);
-  if (stored) return stored;
-  const envKey = process.env.VSHERMES_API_KEY;
-  if (envKey) return envKey;
-  return undefined;
 }
 
 export async function setApiKey(context: vscode.ExtensionContext, key: string): Promise<void> {

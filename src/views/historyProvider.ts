@@ -5,13 +5,21 @@
 import * as vscode from 'vscode';
 import type { SessionSummary } from '../api/types';
 
+/** Friendlier labels for the session source field. */
+const SOURCE_LABELS: Record<string, string> = {
+  cli: 'terminal',
+  api_server: 'vsh-hermes',
+  gateway: 'gateway',
+};
+
 export class SessionTreeItem extends vscode.TreeItem {
   constructor(readonly session: SessionSummary) {
     super(session.title || session.preview || session.id, vscode.TreeItemCollapsibleState.None);
     this.id = session.id;
     this.tooltip = `${session.id}\n${session.preview ?? ''}`.trim();
     const rel = relativeTime(session.last_active);
-    this.description = `${session.model ?? '?'} · ${session.message_count} msgs · ${rel}`;
+    const source = SOURCE_LABELS[session.source ?? ''] ?? session.source ?? '?';
+    this.description = `${source} · ${session.model ?? '?'} · ${session.message_count} msgs · ${rel}`;
     this.contextValue = 'session';
     this.iconPath = new vscode.ThemeIcon('comment-discussion');
   }

@@ -28,6 +28,7 @@ import {
 } from './config';
 import { SLASH_COMMANDS, SlashHandlerId } from './slash/commands';
 import { StatusBar } from './statusbar';
+import { resolveHermesEnv } from './hermesEnv';
 import { ChatViewProvider } from './views/chatProvider';
 import { HistoryProvider } from './views/historyProvider';
 import type { WebviewMessage } from './views/media/protocol';
@@ -123,8 +124,16 @@ class VSHermes {
     } catch (err) {
       this.health = null;
       this.caps = null;
-      this.statusBar.offline((err as Error).message);
-      this.logInfo(`connection failed: ${(err as Error).message}`);
+      const msg = (err as Error).message;
+      this.statusBar.offline(msg);
+      this.logInfo(`connection failed: ${msg}`);
+      const unreachable = err instanceof HermesApiError && err.code === 'connection_failed';
+      this.view.post({
+        type: 'error',
+        message: unreachable
+          ? `Cannot reach Hermes at ${getBaseUrl()} — is the gateway running? Try: hermes gateway run`
+          : msg,
+      });
       this.view.post({ type: 'state', connected: false, baseUrl: getBaseUrl(), syncReport: null, sessionId: null, model: null, sessions: [], slashCommands: SLASH_COMMANDS, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
       return;
     }
@@ -138,13 +147,23 @@ class VSHermes {
   private async ensureClient(): Promise<HermesClient> {
     if (this.client) return this.client;
     const baseUrl = getBaseUrl();
-    let key = await getApiKey(this.context);
+    const { key, source } = await getApiKey(this.context);
     if (!key) {
-      key = await promptForApiKey(this.context);
-      if (!key) {
-        throw new Error('no API key configured — run "VSHermes: Set API Key"');
+      const prompted = await promptForApiKey(this.context);
+      if (!prompted) {
+        throw new Error(
+          'No API key configured — checked SecretStorage, VSHERMES_API_KEY and the Hermes .env. ' +
+            'Run "VSHermes: Set API Key" to provide API_SERVER_KEY manually.',
+        );
       }
+      this.logInfo('API key provided via prompt (stored in SecretStorage).');
+      this.client = new HermesClient(baseUrl, prompted);
+      return this.client;
     }
+    const envFile = source === 'hermes-env' ? resolveHermesEnv()?.envFile : undefined;
+    this.logInfo(
+      `API key resolved from ${source}${envFile ? ` (${envFile})` : ''} — baseUrl ${baseUrl}`,
+    );
     this.client = new HermesClient(baseUrl, key);
     return this.client;
   }
@@ -231,7 +250,7 @@ class VSHermes {
   private async listSessions(): Promise<SessionSummary[]> {
     try {
       const c = await this.ensureClient();
-      const res = await c.listSessions(100);
+      const res = await c.listSessions(200);
       this.history.refresh(res.data);
       this.view.post({ type: 'sessions', sessions: res.data });
       return res.data;
