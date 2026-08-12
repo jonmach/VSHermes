@@ -1,0 +1,13 @@
+.vscode/**
+src/**
+test/**
+dist/test/**
+esbuild.mjs
+tsconfig.json
+vitest.config.*
+scripts/**
+node_modules/**
+.gitignore
+**/*.map
+!dist/extension.js
+!dist/media/chat.js

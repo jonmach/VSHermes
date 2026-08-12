@@ -1,0 +1,175 @@
+{
+  "name": "vsh-hermes",
+  "displayName": "VSHermes",
+  "description": "Hermes Agent chat for VS Code — full agent UI (multiline input, image paste, slash commands, history, tool activity, approvals) over the Hermes API Server.",
+  "version": "0.1.0",
+  "publisher": "vsh",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Chat",
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "hermes",
+    "agent",
+    "chat",
+    "ai"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "vsh-hermes",
+          "title": "VSHermes",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "vsh-hermes": [
+        {
+          "type": "webview",
+          "id": "vsh.hermes.chat",
+          "name": "Chat"
+        },
+        {
+          "type": "tree",
+          "id": "vsh.hermes.history",
+          "name": "History"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "vsh.hermes.focusChat",
+        "title": "VSHermes: Focus Chat"
+      },
+      {
+        "command": "vsh.hermes.newSession",
+        "title": "VSHermes: New Chat"
+      },
+      {
+        "command": "vsh.hermes.openHistory",
+        "title": "VSHermes: Show History"
+      },
+      {
+        "command": "vsh.hermes.refreshSessions",
+        "title": "VSHermes: Refresh History",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "vsh.hermes.openSession",
+        "title": "VSHermes: Open Session",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "vsh.hermes.forkSession",
+        "title": "VSHermes: Fork Session"
+      },
+      {
+        "command": "vsh.hermes.deleteSession",
+        "title": "VSHermes: Delete Session",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "vsh.hermes.checkSync",
+        "title": "VSHermes: Check Hermes Sync"
+      },
+      {
+        "command": "vsh.hermes.setApiKey",
+        "title": "VSHermes: Set API Key"
+      },
+      {
+        "command": "vsh.hermes.chooseModel",
+        "title": "VSHermes: Switch Model"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "vsh.hermes.newSession",
+          "when": "view == vsh.hermes.chat",
+          "group": "navigation"
+        },
+        {
+          "command": "vsh.hermes.checkSync",
+          "when": "view == vsh.hermes.chat",
+          "group": "navigation"
+        },
+        {
+          "command": "vsh.hermes.refreshSessions",
+          "when": "view == vsh.hermes.history",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "vsh.hermes.openSession",
+          "when": "view == vsh.hermes.history",
+          "group": "inline"
+        },
+        {
+          "command": "vsh.hermes.forkSession",
+          "when": "view == vsh.hermes.history",
+          "group": "1_actions"
+        },
+        {
+          "command": "vsh.hermes.deleteSession",
+          "when": "view == vsh.hermes.history",
+          "group": "2_danger"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "VSHermes",
+      "properties": {
+        "vsh.hermes.baseUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8642",
+          "description": "Hermes API Server base URL (gateway platform api_server)."
+        },
+        "vsh.hermes.checkSyncOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run the Hermes sync check when the chat view opens."
+        },
+        "vsh.hermes.maxImageBytes": {
+          "type": "number",
+          "default": 8388608,
+          "description": "Maximum accepted size for pasted/dropped images (bytes). Larger files are downscaled."
+        },
+        "vsh.hermes.maxImageDimension": {
+          "type": "number",
+          "default": 4096,
+          "description": "Longest side (px) images are downscaled to before sending."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./ && node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "test": "vitest run",
+    "test:live": "VSHERMES_LIVE=1 vitest run test/live.integration.test.ts",
+    "package": "npm run compile && npx @vscode/vsce package",
+    "check-sync": "node scripts/check-sync.mjs"
+  },
+  "dependencies": {
+    "dompurify": "^3.1.6",
+    "marked": "^12.0.2"
+  },
+  "devDependencies": {
+    "@types/dompurify": "^3.0.5",
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.32.0",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.9"
+  }
+}
