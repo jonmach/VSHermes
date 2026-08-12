@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.2 (2026-08-12)
+
+- **Home tab compacted to icon buttons** — the six full-width text buttons
+  (3 rows, ~130px) are now a single row of 28px icon buttons with hover
+  tooltips. Labels moved into the tooltip (`title` + `aria-label`).
+  Distinct glyphs: `+` New Chat, `⟳` Check Sync, `⚙` Switch Model,
+  `🔑` Set API Key, `↻` Refresh History.
+- **History button removed from Home** — History is already a sidebar tab in
+  the same container (Home / Chat / History), and the button's focus-only
+  behavior (no toggle) made a second click a no-op. The tab is the one door;
+  the command palette entry (`VSHermes: Open History`) remains for keyboard
+  users. Refresh History (`↻`) stays — it reloads the session list.
+
 ## 0.1.1 (2026-08-12)
 
 - **Activity-bar icon fixed — root cause: client-side cache keyed to the

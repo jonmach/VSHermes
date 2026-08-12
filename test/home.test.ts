@@ -1,6 +1,6 @@
 /**
  * Home view bundle smoke test — runs dist/media/home.js in jsdom and
- * verifies the action buttons post the right messages to the host.
+ * verifies the icon buttons post the right messages to the host.
  */
 
 import { readFileSync } from 'node:fs';
@@ -37,52 +37,41 @@ function bootHome(): { sent: HostMsg[]; post: (msg: HostMsg) => void } {
   };
 }
 
-function clickButton(sent: HostMsg[], label: string): void {
-  void sent;
-  void label;
-  // Covered by clickAction against the live DOM in bootWithDom tests.
-}
-
 describe('home view bundle (dist/media/home.js)', () => {
   it('boots and posts ready', () => {
     const { sent } = bootHome();
     expect(sent.some((m) => m.type === 'ready')).toBe(true);
   });
 
-  it('renders one button per action', () => {
-    const dom = new JSDOM('<!DOCTYPE html><html><body><div id="status"></div><div id="grid"></div></body></html>', {
-      runScripts: 'dangerously',
-      url: 'https://vscode-webview.test',
-      beforeParse(window) {
-        (window as unknown as { acquireVsCodeApi: () => unknown }).acquireVsCodeApi = () => ({
-          postMessage: () => undefined,
-          getState: () => undefined,
-          setState: () => undefined,
-        });
-      },
-    });
-    const script = dom.window.document.createElement('script');
-    script.textContent = readFileSync(BUNDLE, 'utf8');
-    dom.window.document.body.appendChild(script);
-    const buttons = Array.from(dom.window.document.querySelectorAll('button.action')).map((b) => b.textContent);
-    expect(buttons).toContain('+ New Chat');
-    expect(buttons).toContain('⟳ Check Sync');
-    expect(buttons).toContain('⚙ Switch Model');
-    expect(buttons).toContain('☰ History');
-    expect(buttons).toContain('🔑 Set API Key');
-    expect(buttons).toContain('⟳ Refresh History');
+  it('renders one icon button per action (no text labels, no History)', () => {
+    const { dom } = bootWithDom();
+    const buttons = Array.from(dom.window.document.querySelectorAll('button.action'));
+    const glyphs = buttons.map((b) => b.textContent);
+    expect(glyphs).toEqual(['+', '⟳', '⚙', '🔑', '↻']);
+    // Every button keeps its hover tooltip.
+    for (const b of buttons) {
+      expect((b as HTMLButtonElement).title.length).toBeGreaterThan(0);
+    }
+    // History is a sidebar tab now — the duplicate button is gone.
+    expect(glyphs).not.toContain('☰');
   });
 
   it('New Chat button posts newSession', () => {
     const { sent, dom } = bootWithDom();
-    clickAction(dom, '+ New Chat');
+    clickAction(dom, '+');
     expect(sent.some((m) => m.type === 'newSession')).toBe(true);
   });
 
   it('Check Sync button posts checkSync', () => {
     const { sent, dom } = bootWithDom();
-    clickAction(dom, '⟳ Check Sync');
+    clickAction(dom, '⟳');
     expect(sent.some((m) => m.type === 'checkSync')).toBe(true);
+  });
+
+  it('Refresh History button posts listSessions', () => {
+    const { sent, dom } = bootWithDom();
+    clickAction(dom, '↻');
+    expect(sent.some((m) => m.type === 'listSessions')).toBe(true);
   });
 
   it('updates the status line from host state', () => {
@@ -124,9 +113,9 @@ function bootWithDom(): { sent: HostMsg[]; post: (msg: HostMsg) => void; dom: JS
   return { sent, post: (m) => dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data: m })), dom };
 }
 
-function clickAction(dom: JSDOM, label: string): void {
+function clickAction(dom: JSDOM, glyph: string): void {
   const btn = Array.from(dom.window.document.querySelectorAll('button.action')).find(
-    (b) => b.textContent === label,
+    (b) => b.textContent === glyph,
   )!;
   btn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
 }

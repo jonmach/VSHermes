@@ -1,6 +1,8 @@
 /**
- * VSHermes Home view — a button hub that keeps action buttons out of the
- * Chat/History tab headers. Future actions slot into the BUTTONS array.
+ * VSHermes Home view — a compact icon-button hub that keeps action buttons
+ * out of the Chat/History tab headers. Future actions slot into BUTTONS.
+ * Icon-only buttons with hover tooltips (title); labels live in the tooltip
+ * so the tab stays small.
  */
 
 import type { HostMessage, WebviewMessage } from './protocol';
@@ -18,18 +20,17 @@ const post = (msg: WebviewMessage): void => {
 
 interface HomeButton {
   id: string;
-  label: string;
+  glyph: string;
   title: string;
   msg: WebviewMessage;
 }
 
 const BUTTONS: HomeButton[] = [
-  { id: 'new', label: '+ New Chat', title: 'Start a new chat session', msg: { type: 'newSession' } },
-  { id: 'sync', label: '⟳ Check Sync', title: 'Check VSHermes ↔ Hermes sync', msg: { type: 'checkSync' } },
-  { id: 'model', label: '⚙ Switch Model', title: 'Change the model for this session', msg: { type: 'chooseModel' } },
-  { id: 'history', label: '☰ History', title: 'Open session history', msg: { type: 'focusHistory' } },
-  { id: 'key', label: '🔑 Set API Key', title: 'Set or clear the API key', msg: { type: 'setApiKey' } },
-  { id: 'refresh', label: '⟳ Refresh History', title: 'Reload the session list', msg: { type: 'listSessions' } },
+  { id: 'new', glyph: '+', title: 'New Chat — start a new session', msg: { type: 'newSession' } },
+  { id: 'sync', glyph: '⟳', title: 'Check Sync — VSHermes ↔ Hermes', msg: { type: 'checkSync' } },
+  { id: 'model', glyph: '⚙', title: 'Switch Model — change the model for this session', msg: { type: 'chooseModel' } },
+  { id: 'key', glyph: '🔑', title: 'Set API Key — set or clear the key', msg: { type: 'setApiKey' } },
+  { id: 'refresh', glyph: '↻', title: 'Refresh History — reload the session list', msg: { type: 'listSessions' } },
 ];
 
 const statusEl = document.getElementById('status') as HTMLDivElement;
@@ -38,8 +39,9 @@ const gridEl = document.getElementById('grid') as HTMLDivElement;
 for (const b of BUTTONS) {
   const el = document.createElement('button');
   el.className = 'action';
-  el.textContent = b.label;
+  el.textContent = b.glyph;
   el.title = b.title;
+  el.setAttribute('aria-label', b.title);
   el.addEventListener('click', () => post(b.msg));
   gridEl.appendChild(el);
 }

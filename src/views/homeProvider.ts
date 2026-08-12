@@ -66,15 +66,16 @@ export class HomeViewProvider implements vscode.WebviewViewProvider {
     .status { font-size: 12px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--vscode-panel-border, #444); }
     .status.ok { color: var(--vscode-testing-iconPassed, #89d185); }
     .status.bad { color: var(--vscode-errorForeground, #f48771); }
-    #grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    #grid { display: flex; flex-direction: row; gap: 6px; flex-wrap: wrap; }
     .action {
       background: var(--vscode-editorWidget-background, #252526);
       color: var(--vscode-editor-foreground, #ddd);
       border: 1px solid var(--vscode-panel-border, #444);
       border-radius: 6px;
-      padding: 10px 8px;
-      font-family: inherit; font-size: 12px;
+      width: 28px; height: 28px; padding: 0;
+      font-family: inherit; font-size: 15px; line-height: 1;
       cursor: pointer; text-align: center;
+      display: flex; align-items: center; justify-content: center;
     }
     .action:hover { border-color: var(--vscode-focusBorder, #3794ff); }
     .note { font-size: 11px; color: var(--vscode-descriptionForeground, #9a9a9a); }
