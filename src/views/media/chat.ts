@@ -292,20 +292,32 @@ function extractImages(content: string | null): string[] {
 // ── sync banner ────────────────────────────────────────────────────
 
 function renderSyncBanner(report: SyncReport | null): void {
-  syncBanner.classList.remove('show');
+  syncBanner.classList.remove('show', 'ok', 'warn');
   syncBanner.innerHTML = '';
-  if (!report || report.status === 'ok' || report.status === 'unknown') return;
+  if (!report) return;
+
   const msg = document.createElement('div');
   msg.className = 'msg';
-  msg.textContent =
-    (report.status === 'outdated' ? '⚠ VSHermes is out of sync with Hermes: ' : 'ℹ Hermes is newer than this plugin: ') +
-    report.messages.join(' ');
   const btn = document.createElement('button');
   btn.textContent = 'Re-check';
   btn.onclick = () => post({ type: 'checkSync' });
+
+  if (report.status === 'ok') {
+    const checked = new Date(report.checkedAt).toLocaleTimeString();
+    msg.textContent = `✓ In sync with Hermes ${report.hermesVersion ?? ''} — checked ${checked}`;
+    syncBanner.classList.add('show', 'ok');
+  } else if (report.status === 'unknown') {
+    msg.textContent = '? Could not reach Hermes for a sync check.';
+    syncBanner.classList.add('show', 'warn');
+  } else if (report.status === 'outdated') {
+    msg.textContent = '⚠ VSHermes is out of sync with Hermes: ' + report.messages.join(' ');
+    syncBanner.classList.add('show', 'warn');
+  } else {
+    msg.textContent = 'ℹ Hermes is newer than this plugin: ' + report.messages.join(' ');
+    syncBanner.classList.add('show');
+  }
   syncBanner.appendChild(msg);
   syncBanner.appendChild(btn);
-  syncBanner.classList.add('show');
 }
 
 // ── streaming events ───────────────────────────────────────────────

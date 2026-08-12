@@ -152,6 +152,30 @@ describe('webview bundle (dist/media/chat.js)', () => {
     expect(banner.textContent).toContain('out of sync');
   });
 
+  it('renders the sync banner for an OK report (visible confirmation)', () => {
+    const { dom, post } = bootWebview();
+    post({
+      type: 'sync',
+      report: {
+        status: 'ok',
+        checkedAt: Date.now(),
+        hermesVersion: '0.20.0',
+        pluginVersion: '0.1.0',
+        pluginMinVersion: '0.20.0',
+        versionCompare: 0,
+        missingRequiredFeatures: [],
+        missingRequiredEndpoints: [],
+        unknownFeatures: [],
+        presentOptionalFeatures: [],
+        messages: ['Aligned with Hermes 0.20.0.'],
+      },
+    });
+    const banner = dom.window.document.getElementById('sync-banner')!;
+    expect(banner.classList.contains('show')).toBe(true);
+    expect(banner.classList.contains('ok')).toBe(true);
+    expect(banner.textContent).toContain('In sync with Hermes 0.20.0');
+  });
+
   it('open slash picker on / and select an action', () => {
     const { dom, sent, input } = bootWebview();
     input.value = '/new';

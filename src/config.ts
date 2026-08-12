@@ -63,6 +63,12 @@ export function getMaxImageDimension(): number {
   return vscode.workspace.getConfiguration('vsh.hermes').get<number>('maxImageDimension', 4096);
 }
 
+export type ImageTransferMode = 'auto' | 'inline' | 'file';
+
+export function getImageTransferMode(): ImageTransferMode {
+  return vscode.workspace.getConfiguration('vsh.hermes').get<ImageTransferMode>('imageTransfer', 'auto');
+}
+
 export async function setApiKey(context: vscode.ExtensionContext, key: string): Promise<void> {
   await context.secrets.store(SECRET_KEY, key);
 }

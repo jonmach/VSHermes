@@ -84,6 +84,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
     #sync-banner { display: none; padding: 6px 10px; font-size: 12px; border-bottom: 1px solid var(--vsh-border); background: color-mix(in srgb, var(--vsh-warn) 12%, transparent); }
     #sync-banner.show { display: flex; gap: 8px; align-items: flex-start; }
+    #sync-banner.ok { background: color-mix(in srgb, var(--vscode-testing-iconPassed, #89d185) 12%, transparent); }
     #sync-banner .msg { flex: 1; white-space: pre-wrap; }
     #sync-banner button { background: none; border: 1px solid var(--vsh-border); color: var(--vsh-fg); border-radius: 3px; cursor: pointer; padding: 2px 8px; }
     #header { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--vsh-border); }

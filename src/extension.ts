@@ -7,6 +7,8 @@
  */
 
 import * as vscode from 'vscode';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { HermesApiError, HermesClient, StreamHandle } from './api/client';
 import { checkSync, MANIFEST, SyncReport } from './api/sync';
 import type {
@@ -22,6 +24,7 @@ import {
   getApiKey,
   getBaseUrl,
   getCheckSyncOnStartup,
+  getImageTransferMode,
   getMaxImageBytes,
   getMaxImageDimension,
   promptForApiKey,
@@ -29,6 +32,7 @@ import {
 import { SLASH_COMMANDS, SlashHandlerId } from './slash/commands';
 import { StatusBar } from './statusbar';
 import { resolveHermesEnv } from './hermesEnv';
+import { buildMessage, resolveImageMode } from './imageTransfer';
 import { ChatViewProvider } from './views/chatProvider';
 import { HistoryProvider } from './views/historyProvider';
 import type { WebviewMessage } from './views/media/protocol';
@@ -334,6 +338,23 @@ class VSHermes {
       this.sessionId = sessionId;
       this.activeRunId = null;
     }
+    // Image transfer strategy: text-only main models reject image_url parts
+    // with 400, so file mode saves images to disk and references the path
+    // (the agent's own vision fallback chain does the analysis).
+    try {
+      const mode = resolveImageMode(getImageTransferMode(), await this.modelVisionCaps());
+      if (mode === 'file') {
+        const home = resolveHermesEnv()?.homeDir ?? os.tmpdir();
+        const attachDir = path.join(home, 'attachments');
+        const { parts: transformed, written } = buildMessage(parts, mode, attachDir);
+        if (written.length > 0) {
+          this.logInfo(`image transfer (file mode) → ${written.join(', ')}`);
+        }
+        parts = transformed;
+      }
+    } catch (err) {
+      this.logInfo(`image transfer planning failed, sending as-is: ${(err as Error).message}`);
+    }
     let sid = this.sessionId;
     try {
       const c = await this.ensureClient();
@@ -366,6 +387,31 @@ class VSHermes {
       this.logInfo(`run started: ${event.run_id}`);
     }
     this.view.post({ type: 'stream', event });
+  }
+
+  private visionCapsCache: Record<string, unknown> | null | undefined;
+
+  /** Vision capability of the current provider/model, if the API tells us.
+   *  Cached; undefined on failure (auto mode then falls back to file). */
+  private async modelVisionCaps(): Promise<Record<string, unknown> | undefined> {
+    if (this.visionCapsCache !== undefined) return this.visionCapsCache ?? undefined;
+    try {
+      const c = await this.ensureClient();
+      const opts = await c.modelOptions();
+      const prov = opts.providers.find((p) => p.is_current) ?? opts.providers[0];
+      const firstModel = Array.isArray(prov?.models) ? prov.models[0] : undefined;
+      const caps =
+        firstModel && typeof firstModel === 'object' && 'capabilities' in firstModel
+          ? (firstModel as { capabilities?: Record<string, unknown> }).capabilities
+          : undefined;
+      this.visionCapsCache = caps;
+      this.logInfo(
+        `model vision capabilities: ${caps ? JSON.stringify(caps) : 'unknown (auto→file)'}`,
+      );
+    } catch {
+      this.visionCapsCache = undefined;
+    }
+    return this.visionCapsCache;
   }
 
   private async refreshSessionAfterRun(sid: string): Promise<void> {
@@ -513,7 +559,7 @@ class VSHermes {
         void this.listSessions();
         break;
       case 'checkSync':
-        await this.runSyncCheck(true);
+        await this.checkSyncCommand();
         break;
       case 'focusHistory':
         this.focusHistory();

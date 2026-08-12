@@ -147,6 +147,12 @@
           "type": "number",
           "default": 4096,
           "description": "Longest side (px) images are downscaled to before sending."
+        },
+        "vsh.hermes.imageTransfer": {
+          "type": "string",
+          "enum": ["auto", "inline", "file"],
+          "default": "auto",
+          "description": "How pasted images reach Hermes: inline = image_url parts (requires a vision-capable main model); file = saved to $HERMES_HOME/attachments and referenced by path (works with text-only models via Hermes' vision fallback chain); auto = inline only when the model advertises vision capability."
         }
       }
     }

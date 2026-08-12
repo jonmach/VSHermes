@@ -26,4 +26,13 @@ Initial release.
 - **Silent webview failures eliminated** — the webview reports script errors
   to the host (Output channel + error toast).
 - CSP hardened (script-src includes the webview resource origin).
+- **Image paste works with text-only main models** — pasted images are saved
+  to $HERMES_HOME/attachments/ and referenced by path (vision_analyze →
+  documented OMLX fallback) instead of being sent as image_url parts, which
+  text-only models (deepseek-v4-flash) reject with 400. Configurable via
+  `vsh.hermes.imageTransfer` (auto/inline/file; auto = inline only when the
+  model advertises vision).
+- **Check Sync is now visibly responsive on every path** — all triggers
+  (command, banner button, welcome button) toast the verdict, and the banner
+  shows the result for every status, including a green "✓ In sync" bar.
 
