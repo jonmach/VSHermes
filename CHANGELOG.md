@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.3 (2026-08-12)
+
+- **Home tab slimmed to just the icon dock** — the connection status line
+  (redundant with the status-bar item) and the "New actions will appear
+  here" note are gone. The tab is now a single ~40px row of icon buttons.
+  All actions remain available from the command palette (VSHermes: New
+  Chat / Check Hermes Sync / Switch Model / Set API Key / Refresh History).
+
 ## 0.1.2 (2026-08-12)
 
 - **Home tab compacted to icon buttons** — the six full-width text buttons

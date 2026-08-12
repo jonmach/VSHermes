@@ -1,11 +1,11 @@
 /**
- * VSHermes Home view — a compact icon-button hub that keeps action buttons
- * out of the Chat/History tab headers. Future actions slot into BUTTONS.
- * Icon-only buttons with hover tooltips (title); labels live in the tooltip
- * so the tab stays small.
+ * VSHermes Home view — a compact icon-button dock. Keeps action buttons out
+ * of the Chat/History tab headers while staying as small as possible.
+ * Every action here is also a command-palette command; the dock is a
+ * shortcut, not the only door. Future actions slot into the BUTTONS array.
  */
 
-import type { HostMessage, WebviewMessage } from './protocol';
+import type { WebviewMessage } from './protocol';
 
 declare function acquireVsCodeApi(): {
   postMessage(msg: WebviewMessage): void;
@@ -33,7 +33,6 @@ const BUTTONS: HomeButton[] = [
   { id: 'refresh', glyph: '↻', title: 'Refresh History — reload the session list', msg: { type: 'listSessions' } },
 ];
 
-const statusEl = document.getElementById('status') as HTMLDivElement;
 const gridEl = document.getElementById('grid') as HTMLDivElement;
 
 for (const b of BUTTONS) {
@@ -45,18 +44,5 @@ for (const b of BUTTONS) {
   el.addEventListener('click', () => post(b.msg));
   gridEl.appendChild(el);
 }
-
-window.addEventListener('message', (e: MessageEvent<HostMessage>) => {
-  const msg = e.data;
-  if (msg.type === 'state') {
-    if (msg.connected) {
-      statusEl.textContent = `● Connected — ${msg.baseUrl}`;
-      statusEl.className = 'status ok';
-    } else {
-      statusEl.textContent = `○ Offline — ${msg.baseUrl}`;
-      statusEl.className = 'status bad';
-    }
-  }
-});
 
 post({ type: 'ready' });

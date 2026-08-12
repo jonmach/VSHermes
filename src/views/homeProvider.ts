@@ -60,12 +60,8 @@ export class HomeViewProvider implements vscode.WebviewViewProvider {
       font-family: var(--vscode-font-family);
       font-size: var(--vscode-font-size, 13px);
       color: var(--vscode-editor-foreground, #ddd);
-      padding: 12px;
-      display: flex; flex-direction: column; gap: 12px;
+      padding: 8px;
     }
-    .status { font-size: 12px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--vscode-panel-border, #444); }
-    .status.ok { color: var(--vscode-testing-iconPassed, #89d185); }
-    .status.bad { color: var(--vscode-errorForeground, #f48771); }
     #grid { display: flex; flex-direction: row; gap: 6px; flex-wrap: wrap; }
     .action {
       background: var(--vscode-editorWidget-background, #252526);
@@ -78,13 +74,10 @@ export class HomeViewProvider implements vscode.WebviewViewProvider {
       display: flex; align-items: center; justify-content: center;
     }
     .action:hover { border-color: var(--vscode-focusBorder, #3794ff); }
-    .note { font-size: 11px; color: var(--vscode-descriptionForeground, #9a9a9a); }
   </style>
 </head>
 <body>
-  <div id="status" class="status">… connecting</div>
   <div id="grid"></div>
-  <div class="note">New actions will appear here. Commands are also available from the command palette (VSHermes: …).</div>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
