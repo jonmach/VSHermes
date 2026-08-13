@@ -1,7 +1,7 @@
 {
   "name": "vsh-hermes",
   "displayName": "VSHermes",
-  "description": "[BETA] Hermes Agent chat for VS Code — full agent UI (multiline input, image paste, slash commands, history, tool activity, approvals) over the Hermes API Server.",
+  "description": "Hermes Agent chat for VS Code — full agent UI (multiline input, image paste, slash commands, history, tool activity, approvals) over the Hermes API Server.",
   "version": "2.0.3",
   "publisher": "synapticity",
   "license": "MIT",

@@ -3,9 +3,10 @@
 ## 2.0.3 (2026-08-13)
 
 - **Display name → VSHermes** — the "(Beta)" suffix is gone from the
-  extension name (marketplace listing, Extensions view). The BETA status
-  note in the README and the description prefix are unchanged — status is
-  a separate decision from the name.
+  extension name (marketplace listing, Extensions view).
+- **BETA status dropped** — the README status banner, the description
+  prefix and the marketplace "(BETA build)" note are gone; the extension
+  is GA (stable 2.x release line).
 
 ## 2.0.2 (2026-08-13)
 

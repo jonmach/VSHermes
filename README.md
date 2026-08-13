@@ -1,6 +1,6 @@
 # VSHermes — Hermes Agent chat for VS Code
 
-> **Status: BETA.** One product, current build 2.0.2 — each build re-verified
+> One product, current build 2.0.3 — each build re-verified
 > against the pinned Hermes API surface. This README describes current
 > functionality, not history (see CHANGELOG.md for the change log).
 
@@ -219,7 +219,7 @@ model switching.
 [latest release](https://github.com/jonmach/VSHermes/releases/latest), then
 Extensions → Install from VSIX.
 
-**From the Marketplace** (BETA build, extension ID `synapticity.vsh-hermes`):
+**From the Marketplace** (extension ID `synapticity.vsh-hermes`):
 search "VSHermes" in the Extensions view.
 
 First launch: the API key is auto-discovered from the Hermes `.env` (see
