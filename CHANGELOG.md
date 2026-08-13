@@ -13,6 +13,11 @@
   Allow/Deny buttons were rendered but unreachable. It now covers the
   whole panel viewport (`position: fixed`) and the box caps at 85vh with
   internal scrolling for long command payloads.
+- **Live transcript refresh** — the open session's messages are re-fetched
+  every 10s while idle (no active stream), so a session being written by
+  the TUI or another window updates in place: new turns and tool cards
+  appear without reopening the session. Change-detected (no re-render when
+  nothing changed) and scroll-preserving (the reading position stays put).
 
 ## 2.0.2 (2026-08-13)
 

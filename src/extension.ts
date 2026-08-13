@@ -74,6 +74,14 @@ class VSHermes {
   private lastBaseUrl: string | null = null;
   /** The "/help" welcome posts once per activation, not per reconnect. */
   private welcomed = false;
+  /** Signature of the last transcript snapshot posted to the webview —
+   *  the polling loop only re-posts when the session's messages changed. */
+  private lastTranscriptSig: {
+    sessionId: string;
+    count: number;
+    lastId: string | null;
+    lastTs: number | null;
+  } | null = null;
   private readonly log = vscode.window.createOutputChannel('VSHermes');
 
   /** Observable test surface — exposed via extension.exports. */
@@ -155,6 +163,7 @@ class VSHermes {
     this.lastBaseUrl = getBaseUrl();
     this.log.appendLine(`VSHermes ${this.pluginVersion} activating… baseUrl=${getBaseUrl()}`);
     this.startHealthPolling();
+    this.startTranscriptPolling();
     void this.connectAndSync();
   }
 
@@ -490,6 +499,66 @@ class VSHermes {
     }
   }
 
+  // ── open-session transcript polling ───────────────────────────────
+
+  /** Every 10s, refresh the open session's messages while idle. A session
+   *  written by another client (the TUI, a second window) updates in place
+   *  — new turns and tool cards appear — instead of staying a stale
+   *  snapshot until the session is reopened or History is refreshed. */
+  private startTranscriptPolling(): void {
+    const timer = setInterval(() => void this.maybeRefreshTranscript(), 10_000);
+    this.context.subscriptions.push({ dispose: () => clearInterval(timer) });
+  }
+
+  private async maybeRefreshTranscript(): Promise<void> {
+    // Never clobber the live stream renderer, and only poll an open session.
+    if (!this.sessionId || this.stream || !this.isConnected) return;
+    try {
+      const c = await this.ensureClient();
+      const msgs = await c.sessionMessages(this.sessionId, 500);
+      const last = msgs.data.length > 0 ? msgs.data[msgs.data.length - 1] : null;
+      const sig = {
+        sessionId: this.sessionId,
+        count: msgs.data.length,
+        lastId: last?.id != null ? String(last.id) : null,
+        lastTs: last?.timestamp ?? null,
+      };
+      const prev = this.lastTranscriptSig;
+      this.lastTranscriptSig = sig;
+      if (
+        prev &&
+        prev.sessionId === sig.sessionId &&
+        prev.count === sig.count &&
+        prev.lastId === sig.lastId &&
+        prev.lastTs === sig.lastTs
+      ) {
+        return; // unchanged — no re-render
+      }
+      this.postTranscript(sig.sessionId, msgs.data);
+    } catch {
+      // Non-fatal — the next tick retries.
+    }
+  }
+
+  /** Post a full transcript snapshot and remember its signature. */
+  private postTranscript(sessionId: string, messages: ChatMessage[]): void {
+    const last = messages.length > 0 ? messages[messages.length - 1] : null;
+    this.lastTranscriptSig = {
+      sessionId,
+      count: messages.length,
+      lastId: last?.id != null ? String(last.id) : null,
+      lastTs: last?.timestamp ?? null,
+    };
+    this.view.post({
+      type: 'messages',
+      sessionId,
+      messages: messages.map((m) => ({
+        ...m,
+        content: enrichImageRefs(m.content, (p) => this.view.asImageUri(p)),
+      })),
+    });
+  }
+
   // ── export ────────────────────────────────────────────────────────
 
   private async exportSession(): Promise<void> {
@@ -810,14 +879,7 @@ class VSHermes {
         c.sessionMessages(id),
         c.getSession(id).catch(() => null),
       ]);
-      this.view.post({
-        type: 'messages',
-        sessionId: id,
-        messages: msgs.data.map((m) => ({
-          ...m,
-          content: enrichImageRefs(m.content, (p) => this.view.asImageUri(p)),
-        })),
-      });
+      this.postTranscript(id, msgs.data);
       this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport, sessionId: id, model: session?.session.model ?? null, sessions: [], slashCommands: SLASH_COMMANDS, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
       this.focusChat();
     } catch (err) {
@@ -1000,14 +1062,7 @@ class VSHermes {
       if (session) {
         this.view.post({ type: 'session', session: session.session });
       }
-      this.view.post({
-        type: 'messages',
-        sessionId: sid,
-        messages: msgs.data.map((m) => ({
-          ...m,
-          content: enrichImageRefs(m.content, (p) => this.view.asImageUri(p)),
-        })),
-      });
+      this.postTranscript(sid, msgs.data);
       void this.listSessions();
     } catch {
       // Non-fatal: the stream already delivered everything.

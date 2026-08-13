@@ -336,6 +336,9 @@ function escapeHtml(s: string): string {
 // ── rendering from stored messages ─────────────────────────────────
 
 function renderMessages(messages: ChatMessage[]): void {
+  const atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 60;
+  const prevTop = messagesEl.scrollTop;
+  const prevHeight = messagesEl.scrollHeight;
   messagesEl.innerHTML = '';
   state.messages = [];
   state.active = null;
@@ -376,7 +379,13 @@ function renderMessages(messages: ChatMessage[]): void {
       }
     }
   }
-  scrollBottom();
+  if (atBottom) {
+    scrollBottom();
+  } else if (prevHeight > 0) {
+    // Keep the reading position anchored — new content appended below
+    // pushes the scroll range down by the height delta.
+    messagesEl.scrollTop = prevTop + (messagesEl.scrollHeight - prevHeight);
+  }
 }
 
 function extractImages(content: string | null): string[] {
