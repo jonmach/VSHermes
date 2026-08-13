@@ -163,6 +163,10 @@ class VSHermes {
       this.caps = await c.capabilities();
       this.statusBar.connected(this.health.version, this.caps.model);
       this.logInfo(`connected to Hermes ${this.health.version} at ${getBaseUrl()}`);
+      // The webview flipped to "offline" the moment a switch started
+      // (client was nulled); a successful connect must push connected:true
+      // or the badge stays stale until a health-poll transition.
+      this.view.post(this.chatState());
     } catch (err) {
       this.health = null;
       this.caps = null;

@@ -21,6 +21,9 @@
   ("remote") endpoints disable file attach as a hard restriction (no upload
   channel to the gateway) while `@path` references stay allowed; pasted
   images are forced inline (works over HTTP with a vision-capable model).
+- **Connection badge stays honest** — a successful (re)connect now pushes
+  `connected` state to the chat webview; switching endpoints no longer
+  leaves the header stuck on "offline" until the next health poll.
 
 ## 2.0.1 (2026-08-13)
 
