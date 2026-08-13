@@ -194,13 +194,8 @@ function renderRow(ep: EndpointProfile, isLocal = false): HTMLElement {
       }
       keyInput.value = '';
     };
-    const hasKey = state.keySet.includes(ep.id);
-    const keyBadge = document.createElement('span');
-    keyBadge.className = 'key-badge' + (hasKey ? ' set' : '');
-    keyBadge.textContent = hasKey ? 'key set' : 'no key';
     keyRow.appendChild(keyInput);
     keyRow.appendChild(keyBtn);
-    keyRow.appendChild(keyBadge);
     row.appendChild(keyRow);
   }
 
