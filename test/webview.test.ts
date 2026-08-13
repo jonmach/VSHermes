@@ -311,6 +311,26 @@ describe('webview bundle (dist/media/chat.js)', () => {
     expect(card!.querySelector('.tool-copy')).not.toBeNull();
   });
 
+  it('@ opens the file picker and inserts @file on selection', async () => {
+    const { dom, sent, post, input } = bootWebview();
+    input.value = '@';
+    input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    expect(dom.window.document.getElementById('slash-popup')!.classList.contains('show')).toBe(true);
+    // The host query is debounced 250ms.
+    await new Promise((r) => setTimeout(r, 300));
+    const q = sent.find((m) => m.type === 'fileQuery');
+    expect(q).toBeDefined();
+    expect((q as unknown as { query: string }).query).toBe('');
+    post({ type: 'fileResults', query: '', files: ['src/foo.ts', 'src/bar.ts'] } as unknown as HostMsg);
+    const items = dom.window.document.querySelectorAll('#slash-popup .slash-item');
+    expect(items.length).toBe(2);
+    expect(items[0].textContent).toContain('src/foo.ts');
+    // Enter selects the highlighted file and closes the popup.
+    input.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    expect(input.value).toBe('@file src/foo.ts');
+    expect(dom.window.document.getElementById('slash-popup')!.classList.contains('show')).toBe(false);
+  });
+
   it('adds a copy button to the thinking block', () => {
     const { dom, post } = bootWebview();
     post({

@@ -26,7 +26,8 @@ export type HostMessage =
   | { type: 'stream:ended'; sessionId: string; error?: string }
   | { type: 'info'; text: string }
   | { type: 'error'; message: string }
-  | { type: 'model'; model: string | null };
+  | { type: 'model'; model: string | null }
+  | { type: 'fileResults'; query: string; files: string[] };
 
 // ── Webview → Host ─────────────────────────────────────────────────
 
@@ -48,6 +49,7 @@ export type WebviewMessage =
   | { type: 'focusHistory' }
   | { type: 'setTitle'; title: string }
   | { type: 'showStatus' }
+  | { type: 'fileQuery'; query: string }
   | { type: 'diag'; level: 'info' | 'error'; message: string };
 
 export type { ApprovalDecision, ChatMessage, MessagePart, SessionSummary, StreamEvent, SyncReport };

@@ -27,9 +27,11 @@ model switching.
   webview, no host round-trip
 - `/new`, `/clear` and deleting the current session **reset the chat
   window** — the view always shows the current session's messages
-- **`@file` mentions** — `@file src/foo.ts` in the input inlines the file's
-  content into the message as a fenced block (workspace-relative or
-  absolute; unresolved mentions stay as text and are flagged)
+- **`@file` mentions** — typing `@` opens a workspace file picker
+  (`@CHAN` lists every file whose path contains "CHAN", live as you type);
+  selecting one inserts `@file <path>` into the message. The mention stays a
+  filename reference — Hermes reads the content itself via its own tools
+  when it needs it, so the prompt stays lean
 
 **Images**
 - Paste or drag-drop into the chat; chips show pending attachments

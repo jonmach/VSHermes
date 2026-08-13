@@ -2,11 +2,12 @@
 
 ## 2.0.1 (2026-08-13)
 
-- **`@file` mentions** — type `@file src/foo.ts` in the chat input and the
-  file's content is inlined into the message as a fenced block (relative
-  paths resolve against the workspace, absolute paths work too; unresolved
-  or oversized mentions are left in place and flagged in chat). Pure
-  client-side — no Hermes file endpoints needed.
+- **`@file` mentions** — typing `@` opens a workspace file picker (files
+  whose path contains the query, live as you type); selecting one inserts
+  `@file <path>` as a filename reference in the message. No content
+  inlining — Hermes reads the file itself via its own tools when it needs
+  it. (Earlier draft inlined file contents; dropped by design to keep the
+  prompt lean and let sub-agents read on demand.)
 
 - **Chat window resets on session change** — `/new`, `/clear` and deleting
   the current session now clear the message list (webview rule: a `state`

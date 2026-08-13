@@ -95,6 +95,12 @@ const state: {
   approval: unknown | null;
   slashIndex: number;
   slashQuery: string;
+  popupMode: 'slash' | 'file' | null;
+  fileResults: string[];
+  fileQuery: string;
+  fileIndex: number;
+  fileDebounce: ReturnType<typeof setTimeout> | undefined;
+  filePostedQuery: string | null;
   maxImageBytes: number;
   maxImageDimension: number;
 } = {
@@ -110,6 +116,12 @@ const state: {
   approval: null,
   slashIndex: 0,
   slashQuery: '',
+  popupMode: null,
+  fileResults: [],
+  fileQuery: '',
+  fileIndex: 0,
+  fileDebounce: undefined,
+  filePostedQuery: null,
   maxImageBytes: 8 * 1024 * 1024,
   maxImageDimension: 4096,
 };
@@ -575,23 +587,50 @@ function renderChips(): void {
   });
 }
 
-// ── slash picker ───────────────────────────────────────────────────
+// ── slash + @file picker ───────────────────────────────────────────
 
-function slashVisible(): boolean {
+function popupVisible(): boolean {
   return slashPopup.classList.contains('show');
 }
 
-function updateSlashPopup(): void {
+function popupMode(): 'slash' | 'file' | null {
   const text = inputEl.value;
   const lineStart = text.lastIndexOf('\n') + 1;
   const line = text.slice(lineStart);
-  const m = /^\/([a-zA-Z0-9_-]*)$/.exec(line);
-  if (!m) {
-    hideSlashPopup();
+  if (/^\//.test(line)) return 'slash';
+  if (/^@/.test(line)) return 'file';
+  return null;
+}
+
+function updatePopup(): void {
+  const text = inputEl.value;
+  const lineStart = text.lastIndexOf('\n') + 1;
+  const line = text.slice(lineStart);
+  const sm = /^\/([a-zA-Z0-9_-]*)$/.exec(line);
+  if (sm) {
+    state.popupMode = 'slash';
+    renderSlashItems(sm[1]);
     return;
   }
-  state.slashQuery = m[1];
-  const items = filterSlash(state.slashQuery);
+  const fm = /^@(?:file\s+)?(\S*)$/.exec(line);
+  if (fm) {
+    state.popupMode = 'file';
+    renderFileItems(fm[1]);
+    return;
+  }
+  hideSlashPopup();
+}
+
+function hideSlashPopup(): void {
+  slashPopup.classList.remove('show');
+  state.popupMode = null;
+  clearTimeout(state.fileDebounce);
+  state.fileDebounce = undefined;
+}
+
+function renderSlashItems(query: string): void {
+  state.slashQuery = query;
+  const items = filterSlash(query);
   state.slashIndex = Math.min(state.slashIndex, Math.max(items.length - 1, 0));
   slashPopup.innerHTML = '';
   items.forEach((c, i) => {
@@ -604,8 +643,43 @@ function updateSlashPopup(): void {
   slashPopup.classList.add('show');
 }
 
-function hideSlashPopup(): void {
-  slashPopup.classList.remove('show');
+function renderFileItems(query: string): void {
+  state.fileQuery = query;
+  // Debounced host query — the webview has no file access.
+  if (query !== state.filePostedQuery) {
+    state.filePostedQuery = query;
+    clearTimeout(state.fileDebounce);
+    state.fileDebounce = setTimeout(() => post({ type: 'fileQuery', query }), 250);
+  }
+  const items = filteredFiles();
+  state.fileIndex = Math.min(state.fileIndex, Math.max(items.length - 1, 0));
+  slashPopup.innerHTML = '';
+  if (items.length === 0) {
+    const el = document.createElement('div');
+    el.className = 'slash-item';
+    el.innerHTML = `<span class="sname">@file</span><span class="ssum">no matching files</span><span class="skind">file</span>`;
+    slashPopup.appendChild(el);
+  }
+  items.forEach((f, i) => {
+    const el = document.createElement('div');
+    el.className = 'slash-item' + (i === state.fileIndex ? ' selected' : '');
+    el.innerHTML = `<span class="sname">@file ${escapeHtml(f)}</span><span class="skind">file</span>`;
+    el.onclick = () => selectFile(f);
+    slashPopup.appendChild(el);
+  });
+  slashPopup.classList.add('show');
+}
+
+function filteredFiles(): string[] {
+  const q = state.fileQuery.toLowerCase();
+  return state.fileResults.filter((f) => f.toLowerCase().includes(q));
+}
+
+function selectFile(filePath: string): void {
+  hideSlashPopup();
+  const lineStart = inputEl.value.lastIndexOf('\n') + 1;
+  inputEl.value = inputEl.value.slice(0, lineStart) + `@file ${filePath}`;
+  inputEl.focus();
 }
 
 function selectSlash(c: SlashCommandDef): void {
@@ -762,6 +836,12 @@ function onHostMessage(msg: HostMessage): void {
       state.model = msg.model;
       modelBadge.textContent = msg.model ? `⚙ ${msg.model}` : '';
       break;
+    case 'fileResults':
+      if (msg.query === state.fileQuery) {
+        state.fileResults = msg.files;
+        if (state.popupMode === 'file') updatePopup();
+      }
+      break;
   }
 }
 
@@ -772,24 +852,32 @@ window.addEventListener('message', (e: MessageEvent<HostMessage>) => {
 });
 
 inputEl.addEventListener('keydown', (e) => {
-  if (slashVisible() && e.key !== 'Escape') {
+  if (popupVisible() && e.key !== 'Escape') {
+    const fileMode = state.popupMode === 'file';
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      state.slashIndex++;
-      updateSlashPopup();
+      if (fileMode) state.fileIndex++;
+      else state.slashIndex++;
+      updatePopup();
       return;
     }
     if (e.key === 'ArrowUp') {
       e.preventDefault();
-      state.slashIndex = Math.max(0, state.slashIndex - 1);
-      updateSlashPopup();
+      if (fileMode) state.fileIndex = Math.max(0, state.fileIndex - 1);
+      else state.slashIndex = Math.max(0, state.slashIndex - 1);
+      updatePopup();
       return;
     }
     if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
-      const items = filterSlash(state.slashQuery);
-      const c = items[state.slashIndex];
-      if (c) selectSlash(c);
+      if (fileMode) {
+        const f = filteredFiles()[state.fileIndex];
+        if (f) selectFile(f);
+      } else {
+        const items = filterSlash(state.slashQuery);
+        const c = items[state.slashIndex];
+        if (c) selectSlash(c);
+      }
       return;
     }
   }
@@ -816,13 +904,13 @@ inputEl.addEventListener('keydown', (e) => {
     return;
   }
   if (e.key === 'Escape') hideSlashPopup();
-  if (e.key === ' ') updateSlashPopup();
+  if (e.key === ' ') updatePopup();
 });
 
 inputEl.addEventListener('input', () => {
   inputEl.style.height = 'auto';
   inputEl.style.height = Math.min(inputEl.scrollHeight, 180) + 'px';
-  updateSlashPopup();
+  updatePopup();
 });
 
 inputEl.addEventListener('paste', (e) => {
