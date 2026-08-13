@@ -15,6 +15,12 @@
   workspaces VS Code does not deliver host-filesystem (Finder) drops to
   webviews — correct VS Code behavior (microsoft/vscode#193558 / #158150),
   not a VSHermes bug — so the paperclip is the attach path there.
+- **Endpoint profiles + Endpoints panel** — named profiles (URL + per-profile
+  SecretStorage key) toggled by the gear codicon; Test/Activate per profile;
+  legacy baseUrl resolution unchanged when no profiles exist. Non-loopback
+  ("remote") endpoints disable file attach as a hard restriction (no upload
+  channel to the gateway) while `@path` references stay allowed; pasted
+  images are forced inline (works over HTTP with a vision-capable model).
 
 ## 2.0.1 (2026-08-13)
 

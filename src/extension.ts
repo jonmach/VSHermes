@@ -22,13 +22,20 @@ import type {
 import {
   clearApiKey,
   getApiKey,
+  getActiveEndpoint,
   getBaseUrl,
   getCheckSyncOnStartup,
+  getEndpointApiKey,
+  getEndpoints,
   getImageTransferMode,
   getMaxImageBytes,
   getMaxImageDimension,
   promptForApiKey,
+  saveEndpoints,
+  setActiveEndpoint,
+  setEndpointApiKey,
 } from './config';
+import { isRemoteUrl, makeEndpointId, normalizeUrl } from './endpointCore';
 import { SLASH_COMMANDS, SlashHandlerId } from './slash/commands';
 import { sessionIdFromArg } from './sessionArg';
 import { StatusBar } from './statusbar';
@@ -39,7 +46,9 @@ import { messagesToMarkdown } from './exportMarkdown';
 import { enrichImageRefs } from './imageRefs';
 import { ChatViewProvider } from './views/chatProvider';
 import { HistoryProvider } from './views/historyProvider';
-import type { FileEntry, WebviewMessage } from './views/media/protocol';
+import { EndpointsPanel } from './endpointsPanel';
+import type { FileEntry, HostMessage, WebviewMessage } from './views/media/protocol';
+import type { EndpointsWebviewMessage } from './views/media/protocol';
 
 export function activate(context: vscode.ExtensionContext): VSHermes {
   return new VSHermes(context);
@@ -50,6 +59,7 @@ class VSHermes {
   readonly statusBar: StatusBar;
   readonly view: ChatViewProvider;
   readonly history: HistoryProvider;
+  readonly endpointsPanel: EndpointsPanel;
 
   private client: HermesClient | null = null;
   private sessionId: string | null = null;
@@ -76,10 +86,12 @@ class VSHermes {
     this.statusBar = new StatusBar('vsh.hermes.focusChat');
     this.view = new ChatViewProvider(context.extensionUri);
     this.history = new HistoryProvider(() => this.listSessions());
+    this.endpointsPanel = new EndpointsPanel(context.extensionUri);
 
     context.subscriptions.push(
       this.statusBar,
       this.view,
+      this.endpointsPanel,
       this.log,
       vscode.window.registerWebviewViewProvider('vsh.hermes.chat', this.view, {
         webviewOptions: { retainContextWhenHidden: true },
@@ -89,10 +101,17 @@ class VSHermes {
         showCollapseAll: false,
       }),
       this.view.onDidReceiveMessage((msg) => void this.handleWebviewMessage(msg)),
+      this.endpointsPanel.onDidReceiveMessage((msg) => void this.handleEndpointMessage(msg)),
       vscode.workspace.onDidChangeConfiguration((e) => {
-        if (e.affectsConfiguration('vsh.hermes.baseUrl')) {
+        if (
+          e.affectsConfiguration('vsh.hermes.baseUrl') ||
+          e.affectsConfiguration('vsh.hermes.endpoints') ||
+          e.affectsConfiguration('vsh.hermes.activeEndpoint')
+        ) {
           this.client = null;
           void this.connectAndSync();
+          this.view.post(this.chatState());
+          void this.refreshEndpointsPanel();
         }
       }),
       vscode.commands.registerCommand('vsh.hermes.focusChat', () => this.focusChat()),
@@ -118,6 +137,7 @@ class VSHermes {
       vscode.commands.registerCommand('vsh.hermes.searchHistory', () => void this.searchHistory()),
       vscode.commands.registerCommand('vsh.hermes.copyConversation', () => void this.copyConversation()),
       vscode.commands.registerCommand('vsh.hermes.attachFiles', () => void this.attachFiles()),
+      vscode.commands.registerCommand('vsh.hermes.endpoints', () => this.endpointsPanel.toggle()),
     );
 
     this.statusBar.connecting();
@@ -156,13 +176,130 @@ class VSHermes {
           ? `Cannot reach Hermes at ${getBaseUrl()} — is the gateway running? Try: hermes gateway run`
           : msg,
       });
-      this.view.post({ type: 'state', connected: false, baseUrl: getBaseUrl(), syncReport: null, sessionId: null, model: null, sessions: [], slashCommands: SLASH_COMMANDS, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
+      this.view.post(this.chatState());
       return;
     }
     await this.runSyncCheck(false);
     void this.listSessions();
     if (getCheckSyncOnStartup()) {
       this.view.postInfo(`Connected to Hermes ${this.health.version}. Type /help for commands.`);
+    }
+  }
+
+  /** Full chat state snapshot (ready + every endpoint/connection change). */
+  private chatState(): Extract<HostMessage, { type: 'state' }> {
+    return {
+      type: 'state',
+      connected: this.isConnected,
+      baseUrl: getBaseUrl(),
+      remote: isRemoteUrl(getBaseUrl()),
+      syncReport: this.syncReport,
+      sessionId: this.sessionId,
+      model: this.caps?.model ?? null,
+      sessions: [],
+      slashCommands: SLASH_COMMANDS,
+      maxImageBytes: getMaxImageBytes(),
+      maxImageDimension: getMaxImageDimension(),
+    };
+  }
+
+  // ── endpoints panel ──────────────────────────────────────────────
+
+  private async handleEndpointMessage(msg: EndpointsWebviewMessage): Promise<void> {
+    switch (msg.type) {
+      case 'ready':
+        await this.refreshEndpointsPanel();
+        break;
+      case 'add': {
+        const url = normalizeUrl(msg.url);
+        if (!url) break;
+        const endpoints = getEndpoints();
+        endpoints.push({ id: makeEndpointId(msg.name), name: msg.name.trim(), url });
+        saveEndpoints(endpoints);
+        this.afterEndpointsChanged();
+        break;
+      }
+      case 'update': {
+        const url = normalizeUrl(msg.url);
+        if (!url) break;
+        saveEndpoints(
+          getEndpoints().map((e) => (e.id === msg.id ? { ...e, name: msg.name.trim(), url } : e)),
+        );
+        this.afterEndpointsChanged();
+        break;
+      }
+      case 'remove': {
+        saveEndpoints(getEndpoints().filter((e) => e.id !== msg.id));
+        if (getActiveEndpoint()?.id === msg.id) setActiveEndpoint(null);
+        this.afterEndpointsChanged();
+        break;
+      }
+      case 'setActive':
+        setActiveEndpoint(msg.id);
+        this.afterEndpointsChanged();
+        break;
+      case 'setKey':
+        if (msg.key.trim()) await setEndpointApiKey(this.context, msg.id, msg.key.trim());
+        await this.refreshEndpointsPanel();
+        break;
+      case 'test':
+        await this.testEndpoint(msg.id);
+        break;
+    }
+  }
+
+  /** Endpoint store changed → reconnect and refresh every surface (chat
+   *  state incl. the remote flag, panel). */
+  private afterEndpointsChanged(): void {
+    this.client = null;
+    void this.connectAndSync();
+    this.view.post(this.chatState());
+    void this.refreshEndpointsPanel();
+  }
+
+  private async refreshEndpointsPanel(): Promise<void> {
+    const keySet: string[] = [];
+    for (const ep of getEndpoints()) {
+      if (await getEndpointApiKey(this.context, ep.id)) keySet.push(ep.id);
+    }
+    this.endpointsPanel.post({
+      type: 'state',
+      endpoints: getEndpoints(),
+      activeId: getActiveEndpoint()?.id ?? null,
+      keySet,
+      remote: isRemoteUrl(getBaseUrl()),
+      connected: this.isConnected,
+      baseUrl: getBaseUrl(),
+    });
+  }
+
+  /** Reachability + version probe for a profile (does not switch to it). */
+  private async testEndpoint(id: string): Promise<void> {
+    const ep = getEndpoints().find((e) => e.id === id);
+    if (!ep) return;
+    const key = (await getEndpointApiKey(this.context, ep.id)) ?? (await getApiKey(this.context)).key;
+    try {
+      const res = await fetch(`${ep.url}/health`, {
+        headers: key ? { Authorization: `Bearer ${key}` } : {},
+        signal: AbortSignal.timeout(5000),
+      });
+      const body = (await res.json()) as { status?: string; version?: string };
+      const ok = res.ok && body.status === 'ok';
+      this.endpointsPanel.post({
+        type: 'testResult',
+        id,
+        ok,
+        detail: ok
+          ? `OK — Hermes ${body.version ?? '?'} at ${ep.url}`
+          : `HTTP ${res.status} — check the API key and that the gateway exposes api_server`,
+      });
+    } catch (err) {
+      this.endpointsPanel.post({
+        type: 'testResult',
+        id,
+        ok: false,
+        detail: `Unreachable: ${(err as Error).message}`,
+      });
     }
   }
 
@@ -193,7 +330,7 @@ class VSHermes {
           if (s?.session.model) model = s.session.model;
         }
         this.view.post({
-          type: 'state', connected: true, baseUrl: getBaseUrl(), syncReport: this.syncReport,
+          type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport,
           sessionId: this.sessionId, model, sessions: [], slashCommands: SLASH_COMMANDS,
           maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension(),
         });
@@ -206,7 +343,7 @@ class VSHermes {
         this.health = null;
         this.statusBar.offline('gateway unreachable');
         this.view.post({
-          type: 'state', connected: false, baseUrl: getBaseUrl(), syncReport: this.syncReport,
+          type: 'state', connected: false, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport,
           sessionId: this.sessionId, model: null, sessions: [], slashCommands: SLASH_COMMANDS,
           maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension(),
         });
@@ -312,8 +449,15 @@ class VSHermes {
   }
 
   /** Paperclip / palette: pick file(s) anywhere → insert `@file <path>` attach
-   *  tokens. The copy into attachments happens at send time. */
+   *  tokens. The copy into attachments happens at send time. Hard-disabled
+   *  on remote endpoints (no upload channel to the gateway). */
   private async attachFiles(): Promise<void> {
+    if (isRemoteUrl(getBaseUrl())) {
+      void vscode.window.showWarningMessage(
+        "File attach isn't available on remote endpoints — the gateway can't receive files. Use a @path reference if the file exists on the remote machine.",
+      );
+      return;
+    }
     try {
       const picked = await vscode.window.showOpenDialog({
         canSelectFiles: true,
@@ -470,7 +614,7 @@ class VSHermes {
       const res = await c.createSession();
       this.sessionId = res.session.id;
       this.activeRunId = null;
-      this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), syncReport: this.syncReport, sessionId: this.sessionId, model: res.session.model, sessions: [], slashCommands: SLASH_COMMANDS, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
+      this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport, sessionId: this.sessionId, model: res.session.model, sessions: [], slashCommands: SLASH_COMMANDS, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
       void this.listSessions();
     } catch (err) {
       this.reportError(err);
@@ -495,7 +639,7 @@ class VSHermes {
           content: enrichImageRefs(m.content, (p) => this.view.asImageUri(p)),
         })),
       });
-      this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), syncReport: this.syncReport, sessionId: id, model: session?.session.model ?? null, sessions: [], slashCommands: SLASH_COMMANDS, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
+      this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport, sessionId: id, model: session?.session.model ?? null, sessions: [], slashCommands: SLASH_COMMANDS, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
       this.focusChat();
     } catch (err) {
       this.reportError(err);
@@ -516,7 +660,7 @@ class VSHermes {
       await c.deleteSession(target);
       if (this.sessionId === target) {
         this.sessionId = null;
-        this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), syncReport: this.syncReport, sessionId: null, model: null, sessions: [], slashCommands: SLASH_COMMANDS, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
+        this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport, sessionId: null, model: null, sessions: [], slashCommands: SLASH_COMMANDS, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
       }
       void this.listSessions();
     } catch (err) {
@@ -544,20 +688,40 @@ class VSHermes {
       this.sessionId = sessionId;
       this.activeRunId = null;
     }
+    // Remote endpoints have no upload channel — @file attach is a hard
+    // restriction (the gateway can't receive files). @<path> references are
+    // plain text and remain allowed.
+    const remote = isRemoteUrl(getBaseUrl());
+    if (remote) {
+      const text = parts.filter((p) => p.type === 'text').map((p) => p.text).join('\n');
+      if (/@file\s+\S/.test(text)) {
+        this.view.post({
+          type: 'error',
+          message:
+            "File attach isn't available on remote endpoints — the gateway can't receive files. Remove the @file mention, or use a @path reference if the file exists on the remote machine.",
+        });
+        return;
+      }
+    }
     // Image transfer strategy: text-only main models reject image_url parts
     // with 400, so file mode saves images to disk and references the path
-    // (the agent's own vision fallback chain does the analysis).
+    // (the agent's own vision fallback chain does the analysis). Remote
+    // endpoints force inline — file mode needs a shared filesystem.
     try {
-      const mode = resolveImageMode(getImageTransferMode(), await this.modelVisionCaps());
-      if (mode === 'file') {
-        const home = resolveHermesEnv()?.homeDir ?? os.tmpdir();
-        const attachDir = path.join(home, 'attachments');
-        const { parts: transformed, written } = buildMessage(parts, mode, attachDir);
-        if (written.length > 0) {
-          this.logInfo(`image transfer (file mode) → ${written.join(', ')}`);
-        }
-        parts = transformed;
+      const mode = remote ? 'inline' : resolveImageMode(getImageTransferMode(), await this.modelVisionCaps());
+      const home = resolveHermesEnv()?.homeDir ?? os.tmpdir();
+      const attachDir = path.join(home, 'attachments');
+      if (remote && parts.some((p) => p.type === 'image_url') && getImageTransferMode() !== 'inline') {
+        this.view.post({
+          type: 'info',
+          text: 'Remote endpoint: pasted images are sent inline (file mode needs a shared filesystem) — a vision-capable main model is required.',
+        });
       }
+      const { parts: transformed, written } = buildMessage(parts, mode, attachDir);
+      if (written.length > 0) {
+        this.logInfo(`image transfer (file mode) → ${written.join(', ')}`);
+      }
+      parts = transformed;
     } catch (err) {
       this.logInfo(`image transfer planning failed, sending as-is: ${(err as Error).message}`);
     }
@@ -741,18 +905,7 @@ class VSHermes {
     switch (msg.type) {
       case 'ready':
         this.logInfo('webview booted (ready received)');
-        this.view.post({
-          type: 'state',
-          connected: this.client !== null,
-          baseUrl: getBaseUrl(),
-          syncReport: this.syncReport,
-          sessionId: this.sessionId,
-          model: this.caps?.model ?? null,
-          sessions: [],
-          slashCommands: SLASH_COMMANDS,
-          maxImageBytes: getMaxImageBytes(),
-          maxImageDimension: getMaxImageDimension(),
-        });
+        this.view.post(this.chatState());
         void this.listSessions();
         if (getCheckSyncOnStartup()) void this.runSyncCheck(false);
         break;

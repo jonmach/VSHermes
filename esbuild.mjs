@@ -34,14 +34,24 @@ const webview = {
   format: 'iife',
 };
 
+/** @type {import('esbuild').BuildOptions} */
+const endpointsPanel = {
+  ...shared,
+  entryPoints: ['src/views/media/endpoints.ts'],
+  outfile: 'dist/media/endpoints.js',
+  platform: 'browser',
+  format: 'iife',
+};
+
 const ctxExt = await esbuild.context(extension);
 const ctxWeb = await esbuild.context(webview);
+const ctxEnd = await esbuild.context(endpointsPanel);
 
 if (watch) {
-  await Promise.all([ctxExt.watch(), ctxWeb.watch()]);
+  await Promise.all([ctxExt.watch(), ctxWeb.watch(), ctxEnd.watch()]);
   console.log('[vsh-hermes] watching…');
 } else {
-  await Promise.all([ctxExt.rebuild(), ctxWeb.rebuild()]);
-  await Promise.all([ctxExt.dispose(), ctxWeb.dispose()]);
+  await Promise.all([ctxExt.rebuild(), ctxWeb.rebuild(), ctxEnd.rebuild()]);
+  await Promise.all([ctxExt.dispose(), ctxWeb.dispose(), ctxEnd.dispose()]);
   console.log('[vsh-hermes] build complete');
 }

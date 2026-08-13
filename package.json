@@ -119,6 +119,11 @@
         "command": "vsh.hermes.searchHistory",
         "title": "VSHermes: Search History",
         "icon": "$(search)"
+      },
+      {
+        "command": "vsh.hermes.endpoints",
+        "title": "VSHermes: Endpoints…",
+        "icon": "$(server)"
       }
     ],
     "menus": {
@@ -152,6 +157,11 @@
           "command": "vsh.hermes.copyConversation",
           "when": "view == vsh.hermes.chat",
           "group": "navigation"
+        },
+        {
+          "command": "vsh.hermes.endpoints",
+          "when": "view == vsh.hermes.chat",
+          "group": "navigation"
         }
       ],
       "view/item/context": [
@@ -178,7 +188,17 @@
         "vsh.hermes.baseUrl": {
           "type": "string",
           "default": "http://127.0.0.1:8642",
-          "description": "Hermes API Server base URL (gateway platform api_server)."
+          "description": "Hermes API Server base URL (gateway platform api_server). Overridden by the active endpoint profile."
+        },
+        "vsh.hermes.endpoints": {
+          "type": "array",
+          "default": [],
+          "description": "Named Hermes API Server endpoint profiles: [{ id, name, url }]. API keys are stored per profile in VS Code SecretStorage, never here."
+        },
+        "vsh.hermes.activeEndpoint": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Id of the active endpoint profile (null = legacy baseUrl resolution)."
         },
         "vsh.hermes.checkSyncOnStartup": {
           "type": "boolean",

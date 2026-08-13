@@ -73,6 +73,19 @@ model switching.
   `/memory` `/mcp` `/plugins` …) are listed honestly as **unsupported** and
   never sent as literal text
 
+**Endpoints** (gear codicon in the chat title bar, or "VSHermes: Endpoints…")
+- Named endpoint profiles (name + URL), each with its own API key stored in
+  VS Code **SecretStorage** (never settings.json) — e.g. your local
+  container and a Hermes API server on another machine
+- **Test** probes `/health` per profile without switching; Activate switches
+  and reconnects. With no profiles configured, behaviour is unchanged
+  (legacy `vsh.hermes.baseUrl` resolution)
+- **Remote endpoints** (any non-loopback host) disable file attach — the
+  gateway can't receive files, so `@file`, the paperclip and drag & drop
+  are hard-restricted with clear messages; `@path` references stay allowed
+  (plain text). Pasted images are **sent inline** over HTTP, so image paste
+  keeps working with a vision-capable model
+
 **Sessions**
 - History tree view: open, continue, fork, delete; source badges
   (terminal / vsh-hermes / gateway)

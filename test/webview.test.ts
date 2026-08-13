@@ -460,6 +460,49 @@ describe('webview bundle (dist/media/chat.js)', () => {
     expect(sent.some((m) => m.type === 'attachDialog')).toBe(true);
   });
 
+  it('remote endpoint: attach button is disabled with an explanatory tooltip', () => {
+    const { dom, post } = bootWebview();
+    post({ type: 'state', remote: true, baseUrl: 'http://10.0.0.5:8642' } as unknown as HostMsg);
+    const btn = dom.window.document.getElementById('attach-btn') as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(btn.title).toContain('remote');
+  });
+
+  it('remote endpoint: dropping a non-image file shows a note, no token', () => {
+    const { dom, post, input } = bootWebview();
+    post({ type: 'state', remote: true, baseUrl: 'http://10.0.0.5:8642' } as unknown as HostMsg);
+    const file = { name: 'bundle.zip', type: 'application/zip', path: '/tmp/bundle.zip' };
+    const ev = new dom.window.Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', { value: { files: [file], types: ['Files'] } });
+    dom.window.document.dispatchEvent(ev);
+    expect(input.value).toBe('');
+    expect(dom.window.document.getElementById('messages')!.textContent).toContain('remote endpoints');
+  });
+
+  it('remote endpoint: Explorer drag (uri-list) is blocked with a note', () => {
+    const { dom, post, input } = bootWebview();
+    post({ type: 'state', remote: true, baseUrl: 'http://10.0.0.5:8642' } as unknown as HostMsg);
+    const uris = 'file:///workspace/src/extension.ts\r\n';
+    const ev = new dom.window.Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', {
+      value: { files: [], types: ['text/uri-list'], getData: (t: string) => (t === 'text/uri-list' ? uris : '') },
+    });
+    dom.window.document.dispatchEvent(ev);
+    expect(input.value).toBe('');
+    expect(dom.window.document.getElementById('messages')!.textContent).toContain('remote endpoints');
+  });
+
+  it('remote endpoint: dropped images still flow to chips (inline mode)', () => {
+    const { dom, post, input } = bootWebview();
+    post({ type: 'state', remote: true, baseUrl: 'http://10.0.0.5:8642' } as unknown as HostMsg);
+    const file = { name: 'pixel.png', type: 'image/png', path: '/tmp/pixel.png' };
+    const ev = new dom.window.Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', { value: { files: [file], types: ['Files'] } });
+    dom.window.document.dispatchEvent(ev);
+    expect(input.value).toBe('');
+    expect(dom.window.document.getElementById('messages')!.textContent).not.toContain('remote endpoints');
+  });
+
   it('adds a copy button to the thinking block', () => {
     const { dom, post } = bootWebview();
     post({

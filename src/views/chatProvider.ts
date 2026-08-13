@@ -156,6 +156,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     #input-row { display: flex; gap: 6px; align-items: flex-end; }
     #attach-btn { background: none; border: none; color: var(--vsh-muted); padding: 7px 8px 8px; cursor: pointer; border-radius: 6px; line-height: 1; flex: none; }
     #attach-btn:hover { color: var(--vsh-fg); background: var(--vsh-border); }
+    #attach-btn:disabled { opacity: 0.4; cursor: default; }
+    #attach-btn:disabled:hover { color: var(--vsh-muted); background: none; }
     #input-area.dragover { outline: 2px dashed var(--vsh-accent); outline-offset: -4px; }
     #input { flex: 1; resize: none; background: var(--vsh-user-bubble); color: var(--vsh-fg); border: 1px solid var(--vsh-border); border-radius: 6px; padding: 8px; font-family: inherit; font-size: inherit; max-height: 180px; outline: none; overflow-wrap: anywhere; }
     #input:focus { border-color: var(--vsh-accent); }

@@ -1,27 +1,80 @@
 /**
  * Configuration + secret handling.
  *
- * baseUrl comes from VS Code settings (vsh.hermes.baseUrl).
- * The API key lives in SecretStorage — never in settings.json.
- * Fallback chain: SecretStorage → VSHERMES_API_KEY env var → prompt flow.
+ * The active endpoint profile (vsh.hermes.endpoints + activeEndpoint) wins
+ * for both baseUrl and API key; without profiles the legacy resolution
+ * applies. baseUrl comes from VS Code settings (vsh.hermes.baseUrl).
+ * API keys live in SecretStorage — never in settings.json.
+ * Key chain: active endpoint key → SecretStorage → VSHERMES_API_KEY env var
+ * → Hermes .env (API_SERVER_KEY) → prompt flow.
  */
 
 import * as vscode from 'vscode';
 import { resolveHermesEnv } from './hermesEnv';
+import { EndpointProfile, normalizeUrl } from './endpointCore';
 
 const SECRET_KEY = 'vsh.hermes.apiKey';
 
+function endpointSecretKey(id: string): string {
+  return `vsh.hermes.apiKey.${id}`;
+}
+
+// ── endpoint profiles ─────────────────────────────────────────────
+
+export function getEndpoints(): EndpointProfile[] {
+  return vscode.workspace.getConfiguration('vsh.hermes').get<EndpointProfile[]>('endpoints', []);
+}
+
+export function getActiveEndpoint(): EndpointProfile | undefined {
+  const id = vscode.workspace
+    .getConfiguration('vsh.hermes')
+    .get<string | null>('activeEndpoint', null);
+  if (!id) return undefined;
+  return getEndpoints().find((e) => e.id === id);
+}
+
+export function saveEndpoints(endpoints: EndpointProfile[]): void {
+  void vscode.workspace
+    .getConfiguration('vsh.hermes')
+    .update('endpoints', endpoints, vscode.ConfigurationTarget.Global);
+}
+
+export function setActiveEndpoint(id: string | null): void {
+  void vscode.workspace
+    .getConfiguration('vsh.hermes')
+    .update('activeEndpoint', id, vscode.ConfigurationTarget.Global);
+}
+
+export async function getEndpointApiKey(
+  context: vscode.ExtensionContext,
+  id: string,
+): Promise<string | undefined> {
+  return await context.secrets.get(endpointSecretKey(id));
+}
+
+export async function setEndpointApiKey(
+  context: vscode.ExtensionContext,
+  id: string,
+  key: string,
+): Promise<void> {
+  await context.secrets.store(endpointSecretKey(id), key);
+}
+
+// ── effective values ──────────────────────────────────────────────
+
 /**
  * Effective API server base URL:
- * explicit setting (vsh.hermes.baseUrl) → Hermes .env (API_SERVER_HOST:PORT)
- * → default http://127.0.0.1:8642.
+ * active endpoint profile → explicit setting (vsh.hermes.baseUrl) →
+ * Hermes .env (API_SERVER_HOST:PORT) → default http://127.0.0.1:8642.
  */
 export function getBaseUrl(): string {
+  const active = getActiveEndpoint();
+  if (active?.url) return active.url;
   const cfg = vscode.workspace.getConfiguration('vsh.hermes');
   const inspected = cfg.inspect<string>('baseUrl');
   const explicit = inspected?.globalValue ?? inspected?.workspaceValue;
   if (explicit && explicit.trim()) {
-    return explicit.trim().replace(/\/+$/, '');
+    return normalizeUrl(explicit) ?? explicit.trim();
   }
   const hermesEnv = resolveHermesEnv();
   if (hermesEnv) return hermesEnv.baseUrl;
@@ -38,10 +91,15 @@ export interface ApiKeyResult {
 
 /**
  * API key resolution chain:
- * SecretStorage → VSHERMES_API_KEY env var → Hermes .env (API_SERVER_KEY)
- * → undefined (the caller may prompt).
+ * active endpoint key → SecretStorage → VSHERMES_API_KEY env var
+ * → Hermes .env (API_SERVER_KEY) → undefined (the caller may prompt).
  */
 export async function getApiKey(context: vscode.ExtensionContext): Promise<ApiKeyResult> {
+  const active = getActiveEndpoint();
+  if (active) {
+    const endpointKey = await getEndpointApiKey(context, active.id);
+    if (endpointKey) return { key: endpointKey, source: 'secret' };
+  }
   const stored = await context.secrets.get(SECRET_KEY);
   if (stored) return { key: stored, source: 'secret' };
   const envKey = process.env.VSHERMES_API_KEY;

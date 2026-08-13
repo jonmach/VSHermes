@@ -88,6 +88,7 @@ const state: {
   connected: boolean;
   sessionId: string | null;
   model: string | null;
+  remote: boolean;
   slashCommands: SlashCommandDef[];
   syncReport: SyncReport | null;
   streaming: boolean;
@@ -112,6 +113,7 @@ const state: {
   connected: false,
   sessionId: null,
   model: null,
+  remote: false,
   slashCommands: [],
   syncReport: null,
   streaming: false,
@@ -817,6 +819,8 @@ function onHostMessage(msg: HostMessage): void {
   switch (msg.type) {
     case 'state':
       state.connected = msg.connected;
+      state.remote = msg.remote;
+      updateAttachAffordances();
       if (msg.sessionId !== state.sessionId) {
         // The chat window shows the current session's messages only — any
         // session switch (/new, /clear, delete-current, …) resets the view.
@@ -981,6 +985,15 @@ inputEl.addEventListener('drop', (e) => {
   }
 });
 
+/** Remote endpoints have no upload channel — file attach is disabled there.
+ *  Images still work (sent inline over HTTP). */
+function updateAttachAffordances(): void {
+  attachBtn.disabled = state.remote;
+  attachBtn.title = state.remote
+    ? 'Attach disabled on remote endpoints — the gateway can\'t receive files'
+    : 'Attach file(s) — copied into the session attachments';
+}
+
 // Drag & drop anywhere on the panel: images → chips (existing flow), any
 // other file → attach token (`@file <path>`; the host copies it into
 // attachments at send time). Two payload shapes:
@@ -1009,6 +1022,11 @@ document.addEventListener('drop', (e) => {
     for (const f of files) {
       if (f.type.startsWith('image/')) {
         void addImageFile(f);
+      } else if (state.remote) {
+        addNote(
+          'File attach isn\'t available on remote endpoints — the gateway can\'t receive files. Use the Endpoints panel (gear) to switch back to a local endpoint.',
+          true,
+        );
       } else {
         const p = (f as File & { path?: string }).path;
         if (p) appendTokens([`@file ${p}`]);
@@ -1038,7 +1056,14 @@ document.addEventListener('drop', (e) => {
     .filter((p) => p.length > 0);
   if (paths.length > 0) {
     e.preventDefault();
-    appendTokens(paths.map((p) => `@file ${p}`));
+    if (state.remote) {
+      addNote(
+        'File attach isn\'t available on remote endpoints — the gateway can\'t receive files. Use the Endpoints panel (gear) to switch back to a local endpoint.',
+        true,
+      );
+    } else {
+      appendTokens(paths.map((p) => `@file ${p}`));
+    }
     return;
   }
   // A drop with the Files type but an empty payload is a host-filesystem
@@ -1067,4 +1092,5 @@ modelBadge.addEventListener('click', () => post({ type: 'chooseModel' }));
 // ── init ───────────────────────────────────────────────────────────
 
 updateRunUi();
+updateAttachAffordances();
 post({ type: 'ready' });

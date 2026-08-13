@@ -13,11 +13,12 @@ import type {
 } from '../../api/types';
 import type { SlashCommandDef } from '../../slash/commands';
 import type { SyncReport } from '../../api/sync';
+import type { EndpointProfile } from '../../endpointCore';
 
 // ── Host → Webview ─────────────────────────────────────────────────
 
 export type HostMessage =
-  | { type: 'state'; connected: boolean; baseUrl: string; syncReport: SyncReport | null; sessionId: string | null; model: string | null; sessions: SessionSummary[]; slashCommands: SlashCommandDef[]; maxImageBytes: number; maxImageDimension: number }
+  | { type: 'state'; connected: boolean; baseUrl: string; remote: boolean; syncReport: SyncReport | null; sessionId: string | null; model: string | null; sessions: SessionSummary[]; slashCommands: SlashCommandDef[]; maxImageBytes: number; maxImageDimension: number }
   | { type: 'session'; session: SessionSummary }
   | { type: 'messages'; sessionId: string; messages: ChatMessage[] }
   | { type: 'sessions'; sessions: SessionSummary[] }
@@ -65,3 +66,27 @@ export type WebviewMessage =
   | { type: 'diag'; level: 'info' | 'error'; message: string };
 
 export type { ApprovalDecision, ChatMessage, MessagePart, SessionSummary, StreamEvent, SyncReport };
+
+// ── Endpoints panel (separate webview) ────────────────────────────
+
+export type EndpointsHostMessage =
+  | {
+      type: 'state';
+      endpoints: EndpointProfile[];
+      activeId: string | null;
+      /** Endpoint ids that have a key stored in SecretStorage. */
+      keySet: string[];
+      remote: boolean;
+      connected: boolean;
+      baseUrl: string;
+    }
+  | { type: 'testResult'; id: string; ok: boolean; detail: string };
+
+export type EndpointsWebviewMessage =
+  | { type: 'ready' }
+  | { type: 'add'; name: string; url: string }
+  | { type: 'update'; id: string; name: string; url: string }
+  | { type: 'remove'; id: string }
+  | { type: 'setActive'; id: string | null }
+  | { type: 'setKey'; id: string; key: string }
+  | { type: 'test'; id: string };
