@@ -10,12 +10,11 @@
   button in the input row, drag & drop anywhere on the panel, the palette
   command, or the `@file ` picker form. Plain `@<path>` (picker or
   Browse…) stays a reference — never copied, works for folders too.
-- **Drag & drop in remote workspaces** — the VS Code client swallows
-  host-filesystem (Finder) drops before they reach the webview (upstream
-  macOS webview DnD limitation, microsoft/vscode#193558 / #158150), so the
-  webview can't even warn about them. Explorer/tree drags (`text/uri-list`)
-  are handled when VS Code delivers them; the paperclip remains the
-  reliable attach path in remote workspaces.
+- **Drag & drop** — works from the OS file manager (local windows) and
+  from the Explorer/tree views (`text/uri-list`). In devcontainers/remote
+  workspaces VS Code does not deliver host-filesystem (Finder) drops to
+  webviews — correct VS Code behavior (microsoft/vscode#193558 / #158150),
+  not a VSHermes bug — so the paperclip is the attach path there.
 
 ## 2.0.1 (2026-08-13)
 

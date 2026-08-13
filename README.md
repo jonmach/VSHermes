@@ -40,14 +40,14 @@ model switching.
   re-send) and sent as `@file <copy path>`: the message stays a small path
   per file, the session owns a durable copy (survives the original moving
   or being deleted), and the LLM decides whether/when to load the content.
-  No size limit — zips, PDFs, datasets and binaries all work. Drag & drop
-  caveat (remote workspaces / macOS): the VS Code client swallows
-  host-filesystem (Finder) drops before they reach the webview — a known
-  upstream limitation (microsoft/vscode#193558, #158150) that applies to
-  every webview extension — so the webview can't even show a warning for
-  them. Use the **paperclip** (container-native file picker) instead, or
-  drop the file into the Explorer first (uploads it into the container),
-  then drag it from there into the chat
+  No size limit — zips, PDFs, datasets and binaries all work. **Drag &
+  drop** works from the OS file manager (local windows) and from the
+  Explorer/tree views. One caveat — **devcontainers / remote workspaces**:
+  VS Code does not deliver host-filesystem (Finder) drops to webviews
+  there, which is *correct* VS Code behavior (microsoft/vscode#193558,
+  #158150), not a VSHermes bug; use the **paperclip** (container file
+  picker) in that case, or drop the file into the Explorer first (uploads
+  it into the container), then drag it from there
 
 **Images**
 - Paste or drag-drop into the chat; chips show pending attachments
