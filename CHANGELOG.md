@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.0.3 (2026-08-13)
+## 2.0.4 (2026-08-13)
 
 - **Display name → VSHermes** — the "(Beta)" suffix is gone from the
   extension name (marketplace listing, Extensions view).

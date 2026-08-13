@@ -1,6 +1,6 @@
 # VSHermes — Hermes Agent chat for VS Code
 
-> One product, current build 2.0.3 — each build re-verified
+> One product, current build 2.0.4 — each build re-verified
 > against the pinned Hermes API surface. This README describes current
 > functionality, not history (see CHANGELOG.md for the change log).
 
@@ -87,9 +87,11 @@ model switching.
   (DeepSeek, OpenAI, …), which Hermes holds in its own config
 - **Remote endpoints require a key** — a non-loopback profile without an
   API key is refused at connect ("Remote endpoints require the server's
-  API_SERVER_KEY — set it in the Endpoints panel (Save key)") and the
-  panel badge shows `key required`. Keyless connections are only possible
-  to loopback (local) servers
+  API_SERVER_KEY — set it in the Endpoints panel (Save key)"), the panel
+  badge shows `key required`, and **activation is refused too** — a
+  keyless remote endpoint never becomes active (panel Activate and
+  auto-switch on session open both fail with a clear note). Keyless
+  connections are only possible to loopback (local) servers
 - **Test** probes reachability *and* validates the key (an authenticated
   probe after `/health`), so a missing or wrong key is reported explicitly
   instead of a false "OK"; Activate switches and reconnects. With no
