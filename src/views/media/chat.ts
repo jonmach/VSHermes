@@ -983,10 +983,17 @@ inputEl.addEventListener('drop', (e) => {
 
 // Drag & drop anywhere on the panel: images → chips (existing flow), any
 // other file → attach token (`@file <path>`; the host copies it into
-// attachments at send time). Non-image drops rely on File.path, which VS
-// Code webviews expose for dropped files.
+// attachments at send time). Two payload shapes:
+//   - dataTransfer.files — real OS drops (local VS Code; File.path is set).
+//     In remote/devcontainer workspaces VS Code strips local host files
+//     from drops into webviews (a Mac path is meaningless in the
+//     container), so files arrives empty — surface an honest note instead
+//     of silence.
+//   - text/uri-list — workbench-internal drags (Explorer tree etc.), i.e.
+//     container-reachable file URIs. These become attach tokens directly.
 document.addEventListener('dragover', (e) => {
-  if (e.dataTransfer?.types.includes('Files')) {
+  const types = e.dataTransfer?.types ?? [];
+  if (types.includes('Files') || types.includes('text/uri-list')) {
     e.preventDefault();
     inputAreaEl.classList.add('dragover');
   }
@@ -994,17 +1001,54 @@ document.addEventListener('dragover', (e) => {
 document.addEventListener('dragleave', () => inputAreaEl.classList.remove('dragover'));
 document.addEventListener('drop', (e) => {
   const dt = e.dataTransfer;
-  if (!dt || dt.files.length === 0) return;
+  if (!dt) return;
   inputAreaEl.classList.remove('dragover');
-  e.preventDefault();
-  for (const f of Array.from(dt.files)) {
-    if (f.type.startsWith('image/')) {
-      void addImageFile(f);
-    } else {
-      const p = (f as File & { path?: string }).path;
-      if (p) appendTokens([`@file ${p}`]);
-      else addNote(`Could not resolve the path for “${f.name}”.`, true);
+  const files = Array.from(dt.files ?? []);
+  if (files.length > 0) {
+    e.preventDefault();
+    for (const f of files) {
+      if (f.type.startsWith('image/')) {
+        void addImageFile(f);
+      } else {
+        const p = (f as File & { path?: string }).path;
+        if (p) appendTokens([`@file ${p}`]);
+        else addNote(`Could not resolve the path for “${f.name}”.`, true);
+      }
     }
+    return;
+  }
+  // Workbench-internal drag (Explorer / tree views): file:// URIs.
+  let uris = '';
+  try {
+    uris = dt.getData('text/uri-list') ?? '';
+  } catch {
+    uris = '';
+  }
+  const paths = uris
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('file:'))
+    .map((l) => {
+      try {
+        return decodeURI(l.slice('file://'.length)).split('#')[0];
+      } catch {
+        return '';
+      }
+    })
+    .filter((p) => p.length > 0);
+  if (paths.length > 0) {
+    e.preventDefault();
+    appendTokens(paths.map((p) => `@file ${p}`));
+    return;
+  }
+  // A drop with the Files type but an empty payload is a host-filesystem
+  // drop that remote VS Code stripped — the container can never see it.
+  if ((dt.types ?? []).includes('Files')) {
+    e.preventDefault();
+    addNote(
+      'Files dragged from the host filesystem can\'t reach the container — use the attach button (paperclip), or drag the file into the Explorer first, then drag it from there.',
+      true,
+    );
   }
 });
 

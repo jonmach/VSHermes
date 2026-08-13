@@ -579,7 +579,7 @@ class VSHermes {
       if (copied.length > 0) this.logInfo(`@file attach → ${copied.join(', ')}`);
       if (missing.length > 0) {
         void vscode.window.showWarningMessage(
-          `VSHermes: ${missing.length} attached file(s) not found — sent as a path reference:\n${missing.join('\n')}`,
+          `VSHermes: ${missing.length} attached file(s) not found — sent as a path reference:\n${missing.join('\n')}\n\nIf you dragged them from the host filesystem (Finder), the container can't see them — drag them into the Explorer first, or use the attach button.`,
         );
       }
     } catch (err) {

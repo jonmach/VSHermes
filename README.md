@@ -40,7 +40,12 @@ model switching.
   re-send) and sent as `@file <copy path>`: the message stays a small path
   per file, the session owns a durable copy (survives the original moving
   or being deleted), and the LLM decides whether/when to load the content.
-  No size limit — zips, PDFs, datasets and binaries all work
+  No size limit — zips, PDFs, datasets and binaries all work. Drag & drop
+  notes: dragging from the **Explorer** (or any tree) attaches the file
+  directly; dragging from the **host filesystem (Finder) doesn't reach the
+  container** — VS Code strips local files from webview drops in remote
+  workspaces, so use the paperclip (container file picker) or drag the
+  file into the Explorer first
 
 **Images**
 - Paste or drag-drop into the chat; chips show pending attachments

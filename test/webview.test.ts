@@ -404,9 +404,44 @@ describe('webview bundle (dist/media/chat.js)', () => {
     const { dom, input } = bootWebview();
     const file = { name: 'bundle.zip', type: 'application/zip', path: '/tmp/bundle.zip' };
     const ev = new dom.window.Event('drop', { bubbles: true, cancelable: true });
-    Object.defineProperty(ev, 'dataTransfer', { value: { files: [file] } });
+    Object.defineProperty(ev, 'dataTransfer', { value: { files: [file], types: ['Files'] } });
     dom.window.document.dispatchEvent(ev);
     expect(input.value).toBe('@file /tmp/bundle.zip');
+  });
+
+  it('dropping a file from the Explorer (text/uri-list) appends attach tokens', () => {
+    const { dom, input } = bootWebview();
+    const uris = 'file:///workspace/src/extension.ts\r\nfile:///workspace/README.md\r\n';
+    const ev = new dom.window.Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', {
+      value: { files: [], types: ['text/uri-list'], getData: (t: string) => (t === 'text/uri-list' ? uris : '') },
+    });
+    dom.window.document.dispatchEvent(ev);
+    expect(input.value).toBe('@file /workspace/src/extension.ts\n@file /workspace/README.md');
+  });
+
+  it('decodes and strips fragments from uri-list entries', () => {
+    const { dom, input } = bootWebview();
+    const uris = 'file:///workspace/my%20file.txt#L3,5\r\n';
+    const ev = new dom.window.Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', {
+      value: { files: [], types: ['text/uri-list'], getData: (t: string) => (t === 'text/uri-list' ? uris : '') },
+    });
+    dom.window.document.dispatchEvent(ev);
+    expect(input.value).toBe('@file /workspace/my file.txt');
+  });
+
+  it('a host-filesystem drop stripped by remote VS Code shows a note, not silence', () => {
+    const { dom, input } = bootWebview();
+    const ev = new dom.window.Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', {
+      value: { files: [], types: ['Files'], getData: () => '' },
+    });
+    dom.window.document.dispatchEvent(ev);
+    expect(input.value).toBe('');
+    const messages = dom.window.document.getElementById('messages')!;
+    expect(messages.textContent).toContain('host filesystem');
+    expect(messages.textContent).toContain('paperclip');
   });
 
   it('dropping an image file does not insert an attach token (chips flow)', () => {
