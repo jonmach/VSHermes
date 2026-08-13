@@ -33,9 +33,12 @@
   with an attach-enabled/disabled badge. **Opening a session
   auto-switches to its server**, reconnects, then loads it; fork/delete
   auto-switch too, and an unreachable server aborts with a clear error.
-- **No duplicate sessions or welcome spam** — the session cache is keyed
-  by canonical server URL, so two profiles pointing at the same machine
-  collapse into one history section; concurrent reconnects share one run
+- **No duplicate sessions or welcome spam** — session listings are cached
+  under the canonical server URL **captured when the fetch starts**, so a
+  background fetch that outlives an endpoint switch can never store the
+  old server's sessions under the new server's key (the "Docker — remote"
+  section full of local sessions bug); reconnects are deduped per server
+  (a switch never reuses an in-flight connection to a different server)
   and the "/help" welcome posts once per activation instead of per switch.
 
 ## 2.0.1 (2026-08-13)

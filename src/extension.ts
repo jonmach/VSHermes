@@ -72,9 +72,6 @@ class VSHermes {
   /** Base URL the current session was established against — endpoint
    *  switches that change it reset the session (server-scoped ids). */
   private lastBaseUrl: string | null = null;
-  /** Concurrent connectAndSync calls share one run (endpoint switches fire
-   *  both the settings handler and the switch flow). */
-  private connectPromise: Promise<void> | null = null;
   /** The "/help" welcome posts once per activation, not per reconnect. */
   private welcomed = false;
   private readonly log = vscode.window.createOutputChannel('VSHermes');
@@ -171,14 +168,21 @@ class VSHermes {
 
   // ── connection ────────────────────────────────────────────────────
 
-  /** Reconnect + resync. Concurrent callers share one run — endpoint
-   *  switches trigger both the settings handler and the switch flow. */
+  /** Reconnect + resync. Concurrent callers for the SAME server share one
+   *  run — endpoint switches fire both the settings handler and the switch
+   *  flow. A caller for a DIFFERENT server never reuses an in-flight run
+   *  (its client would be stale). */
+  private connectPromise: { url: string; promise: Promise<void> } | null = null;
+
   private connectAndSync(): Promise<void> {
-    if (this.connectPromise) return this.connectPromise;
-    this.connectPromise = this.doConnectAndSync().finally(() => {
-      this.connectPromise = null;
+    const url = getBaseUrl();
+    const existing = this.connectPromise;
+    if (existing && existing.url === url) return existing.promise;
+    const run = this.doConnectAndSync().finally(() => {
+      if (this.connectPromise?.promise === run) this.connectPromise = null;
     });
-    return this.connectPromise;
+    this.connectPromise = { url, promise: run };
+    return run;
   }
 
   private async doConnectAndSync(): Promise<void> {
@@ -626,9 +630,14 @@ class VSHermes {
     }
   }
 
-  private async ensureClient(): Promise<HermesClient> {
-    if (this.client) return this.client;
-    const baseUrl = getBaseUrl();
+  private async ensureClient(url?: string): Promise<HermesClient> {
+    const want = url ?? getBaseUrl();
+    // Rebuild when the requested server differs from the cached client's —
+    // a stale client would query the wrong server after an endpoint switch.
+    if (this.client && canonicalUrl(this.client.baseUrl) === canonicalUrl(want)) {
+      return this.client;
+    }
+    const baseUrl = want;
     const { key, source } = await getApiKey(this.context);
     if (!key) {
       const prompted = await promptForApiKey(this.context);
@@ -732,9 +741,14 @@ class VSHermes {
   private async listSessions(): Promise<SessionSummary[]> {
     try {
       const c = await this.ensureClient();
+      // Key by the server we ACTUALLY queried (captured at fetch time), not
+      // getBaseUrl() at write time — an endpoint switch mid-fetch would
+      // otherwise store the old server's sessions under the new server's
+      // key (the "Docker — remote (200) full of local sessions" bug).
+      const url = canonicalUrl(c.baseUrl);
       const res = await c.listSessions(200);
       const cache = this.getSessionCache();
-      cache[canonicalUrl(getBaseUrl())] = res.data;
+      cache[url] = res.data;
       await this.setSessionCache(cache);
       this.history.refresh(cache);
       this.view.post({ type: 'sessions', sessions: res.data });
