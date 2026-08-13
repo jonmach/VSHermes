@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.3 (2026-08-13)
+
+- **Display name → VSHermes** — the "(Beta)" suffix is gone from the
+  extension name (marketplace listing, Extensions view). The BETA status
+  note in the README and the description prefix are unchanged — status is
+  a separate decision from the name.
+
 ## 2.0.2 (2026-08-13)
 
 - **Attach files** — `@file <path>` is now an ATTACH: on send the file is
