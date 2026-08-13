@@ -24,6 +24,15 @@
 - **Connection badge stays honest** — a successful (re)connect now pushes
   `connected` state to the chat webview; switching endpoints no longer
   leaves the header stuck on "offline" until the next health poll.
+- **Local connection row** — the panel always shows a built-in Local
+  connection (legacy resolution, no remote constraints); Activate returns
+  to it from any profile. Switching endpoints resets the current session
+  (server-scoped ids) with a note.
+- **History grouped per server** — sessions are cached per endpoint
+  (persisted in globalState) and the tree renders one section per server
+  with an attach-enabled/disabled badge. **Opening a session
+  auto-switches to its server**, reconnects, then loads it; fork/delete
+  auto-switch too, and an unreachable server aborts with a clear error.
 
 ## 2.0.1 (2026-08-13)
 

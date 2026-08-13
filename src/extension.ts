@@ -28,6 +28,7 @@ import {
   getEndpointApiKey,
   getEndpoints,
   getImageTransferMode,
+  getLocalUrl,
   getMaxImageBytes,
   getMaxImageDimension,
   promptForApiKey,
@@ -35,9 +36,9 @@ import {
   setActiveEndpoint,
   setEndpointApiKey,
 } from './config';
-import { isRemoteUrl, makeEndpointId, normalizeUrl } from './endpointCore';
+import { endpointLabel, isRemoteUrl, LOCAL_ENDPOINT_ID, makeEndpointId, normalizeUrl } from './endpointCore';
 import { SLASH_COMMANDS, SlashHandlerId } from './slash/commands';
-import { sessionIdFromArg } from './sessionArg';
+import { currentServerTarget, sessionTargetFromArg, type SessionTarget } from './sessionArg';
 import { StatusBar } from './statusbar';
 import { resolveHermesEnv } from './hermesEnv';
 import { buildMessage, resolveImageMode } from './imageTransfer';
@@ -68,6 +69,9 @@ class VSHermes {
   private syncReport: SyncReport | null = null;
   private health: HealthStatus | null = null;
   private caps: Capabilities | null = null;
+  /** Base URL the current session was established against — endpoint
+   *  switches that change it reset the session (server-scoped ids). */
+  private lastBaseUrl: string | null = null;
   private readonly log = vscode.window.createOutputChannel('VSHermes');
 
   /** Observable test surface — exposed via extension.exports. */
@@ -85,7 +89,10 @@ class VSHermes {
     this.context = context;
     this.statusBar = new StatusBar('vsh.hermes.focusChat');
     this.view = new ChatViewProvider(context.extensionUri);
-    this.history = new HistoryProvider(() => this.listSessions());
+    this.history = new HistoryProvider({
+      endpointLabel: (id) => endpointLabel(id, getEndpoints()),
+      endpointRemote: (id) => this.endpointIsRemote(id),
+    });
     this.endpointsPanel = new EndpointsPanel(context.extensionUri);
 
     context.subscriptions.push(
@@ -108,6 +115,7 @@ class VSHermes {
           e.affectsConfiguration('vsh.hermes.endpoints') ||
           e.affectsConfiguration('vsh.hermes.activeEndpoint')
         ) {
+          this.noteEndpointChange();
           this.client = null;
           void this.connectAndSync();
           this.view.post(this.chatState());
@@ -119,16 +127,16 @@ class VSHermes {
       vscode.commands.registerCommand('vsh.hermes.openHistory', () => this.focusHistory()),
       vscode.commands.registerCommand('vsh.hermes.refreshSessions', () => void this.listSessions()),
       vscode.commands.registerCommand('vsh.hermes.openSession', (arg: unknown) => {
-        const id = sessionIdFromArg(arg);
-        if (id) void this.openSession(id);
+        const target = sessionTargetFromArg(arg);
+        if (target) void this.openSessionTarget(target);
       }),
       vscode.commands.registerCommand('vsh.hermes.forkSession', (arg?: unknown) => {
-        const id = sessionIdFromArg(arg);
-        if (id) void this.forkSession(id);
+        const target = sessionTargetFromArg(arg);
+        if (target) void this.forkSessionTarget(target);
       }),
       vscode.commands.registerCommand('vsh.hermes.deleteSession', (arg?: unknown) => {
-        const id = sessionIdFromArg(arg);
-        if (id) void this.deleteSession(id);
+        const target = sessionTargetFromArg(arg);
+        if (target) void this.deleteSessionTarget(target);
       }),
       vscode.commands.registerCommand('vsh.hermes.checkSync', () => void this.checkSyncCommand()),
       vscode.commands.registerCommand('vsh.hermes.setApiKey', () => void this.setApiKeyFlow()),
@@ -141,6 +149,7 @@ class VSHermes {
     );
 
     this.statusBar.connecting();
+    this.lastBaseUrl = getBaseUrl();
     this.log.appendLine(`VSHermes ${this.pluginVersion} activating… baseUrl=${getBaseUrl()}`);
     this.startHealthPolling();
     void this.connectAndSync();
@@ -291,10 +300,60 @@ class VSHermes {
   /** Endpoint store changed → reconnect and refresh every surface (chat
    *  state incl. the remote flag, panel). */
   private afterEndpointsChanged(): void {
+    this.noteEndpointChange();
     this.client = null;
     void this.connectAndSync();
     this.view.post(this.chatState());
     void this.refreshEndpointsPanel();
+  }
+
+  /** Reset the current session when the active base URL changed — session
+   *  ids are server-scoped, so a switched endpoint must start fresh. */
+  private noteEndpointChange(): void {
+    const prev = this.lastBaseUrl;
+    const next = getBaseUrl();
+    if (prev !== null && prev !== next && this.sessionId) {
+      this.sessionId = null;
+      this.view.postInfo(`Switched endpoint (${prev} → ${next}) — the previous session stays on its server.`);
+    }
+    this.lastBaseUrl = next;
+  }
+
+  /** The endpoint id the active connection is on ('local' = legacy chain). */
+  private currentEndpointId(): string {
+    return getActiveEndpoint()?.id ?? LOCAL_ENDPOINT_ID;
+  }
+
+  private endpointIsRemote(id: string): boolean {
+    if (id === LOCAL_ENDPOINT_ID) return isRemoteUrl(getLocalUrl());
+    const ep = getEndpoints().find((e) => e.id === id);
+    return ep ? isRemoteUrl(ep.url) : false;
+  }
+
+  /** Switch the active endpoint (auto-switch on session open) and wait for
+   *  the connection to land; false when the target is unreachable. */
+  private async switchToEndpoint(endpointId: string): Promise<boolean> {
+    if (endpointId === this.currentEndpointId()) return this.isConnected;
+    await setActiveEndpoint(endpointId === LOCAL_ENDPOINT_ID ? null : endpointId);
+    this.noteEndpointChange();
+    this.client = null;
+    await this.connectAndSync();
+    this.view.post(this.chatState());
+    void this.refreshEndpointsPanel();
+    return this.isConnected;
+  }
+
+  // ── session cache (history grouped per server) ───────────────────
+
+  private getSessionCache(): Record<string, SessionSummary[]> {
+    return this.context.globalState.get<Record<string, SessionSummary[]>>(
+      'vsh.hermes.sessionsByEndpoint',
+      {},
+    );
+  }
+
+  private async setSessionCache(cache: Record<string, SessionSummary[]>): Promise<void> {
+    await this.context.globalState.update('vsh.hermes.sessionsByEndpoint', cache);
   }
 
   private async refreshEndpointsPanel(): Promise<void> {
@@ -310,14 +369,21 @@ class VSHermes {
       remote: isRemoteUrl(getBaseUrl()),
       connected: this.isConnected,
       baseUrl: getBaseUrl(),
+      localUrl: getLocalUrl(),
     });
   }
 
   /** Reachability + version probe for a profile (does not switch to it). */
   private async testEndpoint(id: string): Promise<void> {
-    const ep = getEndpoints().find((e) => e.id === id);
+    const ep =
+      id === LOCAL_ENDPOINT_ID
+        ? { id: LOCAL_ENDPOINT_ID, name: 'Local connection', url: getLocalUrl() }
+        : getEndpoints().find((e) => e.id === id);
     if (!ep) return;
-    const key = (await getEndpointApiKey(this.context, ep.id)) ?? (await getApiKey(this.context)).key;
+    const key =
+      id === LOCAL_ENDPOINT_ID
+        ? (await getApiKey(this.context)).key
+        : (await getEndpointApiKey(this.context, ep.id)) ?? (await getApiKey(this.context)).key;
     try {
       const res = await fetch(`${ep.url}/health`, {
         headers: key ? { Authorization: `Bearer ${key}` } : {},
@@ -638,13 +704,43 @@ class VSHermes {
     try {
       const c = await this.ensureClient();
       const res = await c.listSessions(200);
-      this.history.refresh(res.data);
+      const cache = this.getSessionCache();
+      cache[this.currentEndpointId()] = res.data;
+      await this.setSessionCache(cache);
+      this.history.refresh(cache);
       this.view.post({ type: 'sessions', sessions: res.data });
       return res.data;
     } catch (err) {
       this.reportError(err);
       return [];
     }
+  }
+
+  /** Open a session anywhere — auto-switches to its server first. */
+  private async openSessionTarget(target: SessionTarget): Promise<void> {
+    if (target.endpointId !== null && target.endpointId !== this.currentEndpointId()) {
+      const ok = await this.switchToEndpoint(target.endpointId);
+      if (!ok) return; // unreachable — connectAndSync surfaced the error
+    }
+    await this.openSession(target.sessionId);
+  }
+
+  /** Delete a session anywhere — auto-switches to its server first. */
+  private async deleteSessionTarget(target: SessionTarget): Promise<void> {
+    if (target.endpointId !== null && target.endpointId !== this.currentEndpointId()) {
+      const ok = await this.switchToEndpoint(target.endpointId);
+      if (!ok) return;
+    }
+    await this.deleteSession(target.sessionId);
+  }
+
+  /** Fork a session anywhere — auto-switches to its server first. */
+  private async forkSessionTarget(target: SessionTarget): Promise<void> {
+    if (target.endpointId !== null && target.endpointId !== this.currentEndpointId()) {
+      const ok = await this.switchToEndpoint(target.endpointId);
+      if (!ok) return;
+    }
+    await this.forkSession(target.sessionId);
   }
 
   private async newSession(): Promise<void> {
@@ -959,13 +1055,13 @@ class VSHermes {
         await this.newSession();
         break;
       case 'openSession':
-        await this.openSession(msg.id);
+        await this.openSessionTarget(currentServerTarget(msg.id));
         break;
       case 'deleteSession':
-        await this.deleteSession(msg.id);
+        await this.deleteSessionTarget(currentServerTarget(msg.id));
         break;
       case 'forkSession':
-        await this.forkSession();
+        if (this.sessionId) await this.forkSessionTarget(currentServerTarget(this.sessionId));
         break;
       case 'stop':
         this.stop();

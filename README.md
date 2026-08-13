@@ -74,21 +74,29 @@ model switching.
   never sent as literal text
 
 **Endpoints** (gear codicon in the chat title bar, or "VSHermes: Endpoints…")
+- A built-in **Local connection** row is always present (legacy resolution:
+  baseUrl setting → `$HERMES_HOME/.env` → `http://127.0.0.1:8642`) — click
+  Activate to return to it; it has none of the remote constraints
 - Named endpoint profiles (name + URL), each with its own API key stored in
   VS Code **SecretStorage** (never settings.json) — e.g. your local
   container and a Hermes API server on another machine
 - **Test** probes `/health` per profile without switching; Activate switches
   and reconnects. With no profiles configured, behaviour is unchanged
-  (legacy `vsh.hermes.baseUrl` resolution)
 - **Remote endpoints** (any non-loopback host) disable file attach — the
   gateway can't receive files, so `@file`, the paperclip and drag & drop
   are hard-restricted with clear messages; `@path` references stay allowed
   (plain text). Pasted images are **sent inline** over HTTP, so image paste
   keeps working with a vision-capable model
+- Switching endpoints resets the current chat session (ids are
+  server-scoped); the abandoned session stays on its server
 
 **Sessions**
-- History tree view: open, continue, fork, delete; source badges
-  (terminal / vsh-hermes / gateway)
+- History tree view grouped **per server**: one collapsible section per
+  endpoint (Local, profile names) with an attach-enabled/disabled badge;
+  cached across reloads
+- **Opening a session auto-switches to the server it lives on** — you
+  continue where you left off, on the right machine; fork/delete do the
+  same. An unreachable server surfaces a clear error and the chat stays put
 - Terminal (CLI) sessions open with full history — one pool of sessions
 
 **Actions & navigation**

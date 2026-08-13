@@ -35,6 +35,9 @@ export function normalizeUrl(url: string): string | null {
   return t.length > 0 ? t : null;
 }
 
+/** Sentinel endpoint id for the built-in "Local connection" (no profile). */
+export const LOCAL_ENDPOINT_ID = 'local';
+
 /** Stable-ish id from a name (slug + timestamp + random suffix — two
  *  profiles created in the same millisecond must not collide, ids scope
  *  SecretStorage keys). */
@@ -46,4 +49,10 @@ export function makeEndpointId(name: string): string {
     .replace(/^-+|-+$/g, '');
   const rand = Math.random().toString(36).slice(2, 6);
   return `${slug || 'endpoint'}-${Date.now().toString(36)}${rand}`;
+}
+
+/** Display label for an endpoint id (used by the history tree + panel). */
+export function endpointLabel(id: string | null, endpoints: EndpointProfile[]): string {
+  if (id === null || id === LOCAL_ENDPOINT_ID) return 'Local';
+  return endpoints.find((e) => e.id === id)?.name ?? id;
 }

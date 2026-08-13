@@ -79,6 +79,8 @@ export type EndpointsHostMessage =
       remote: boolean;
       connected: boolean;
       baseUrl: string;
+      /** Resolved legacy URL — what the built-in "Local connection" points at. */
+      localUrl: string;
     }
   | { type: 'testResult'; id: string; ok: boolean; detail: string }
   | { type: 'note'; text: string };

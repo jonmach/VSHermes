@@ -74,14 +74,60 @@ describe('endpoints panel bundle (dist/media/endpoints.js)', () => {
       remote: true,
       connected: false,
       baseUrl: 'http://10.0.0.5:8642',
+      localUrl: 'http://127.0.0.1:8642',
     } as unknown as HostMsg);
     const rows = dom.window.document.querySelectorAll('.endpoint');
-    expect(rows.length).toBe(1);
-    const row = rows[0];
+    expect(rows.length).toBe(2); // Local connection + profile
+    const row = rows[1];
     expect(row.textContent).toContain('Home server');
     expect(row.textContent).toContain('remote');
     expect(Array.from(row.querySelectorAll('button')).some((b) => b.textContent === 'Test')).toBe(true);
     expect(Array.from(row.querySelectorAll('button')).some((b) => b.textContent === 'Activate')).toBe(true);
+  });
+
+  it('always renders the Local connection row first, active when no profile is', () => {
+    const { dom, post } = bootPanel();
+    post({
+      type: 'state',
+      endpoints: [{ id: 'e1', name: 'Home server', url: 'http://10.0.0.5:8642' }],
+      activeId: null,
+      keySet: [],
+      remote: false,
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      localUrl: 'http://127.0.0.1:8642',
+    } as unknown as HostMsg);
+    const rows = dom.window.document.querySelectorAll('.endpoint');
+    const local = rows[0];
+    expect(local.textContent).toContain('Local connection');
+    expect(local.classList.contains('active')).toBe(true);
+    expect(local.textContent).toContain('legacy key');
+    // Local has Test but no Save/Remove/key input.
+    const buttons = Array.from(local.querySelectorAll('button')).map((b) => b.textContent);
+    expect(buttons).toContain('Test');
+    expect(buttons).not.toContain('Save');
+    expect(buttons).not.toContain('Remove');
+    expect(local.querySelector('.keyrow')).toBeNull();
+    expect(Array.from(rows[1].querySelectorAll('button')).some((b) => b.textContent === 'Activate')).toBe(true);
+  });
+
+  it('activating the Local row posts setActive null', () => {
+    const { dom, post, sent } = bootPanel();
+    post({
+      type: 'state',
+      endpoints: [{ id: 'e1', name: 'Home server', url: 'http://10.0.0.5:8642' }],
+      activeId: 'e1',
+      keySet: [],
+      remote: true,
+      connected: true,
+      baseUrl: 'http://10.0.0.5:8642',
+      localUrl: 'http://127.0.0.1:8642',
+    } as unknown as HostMsg);
+    const local = dom.window.document.querySelectorAll('.endpoint')[0];
+    const activate = Array.from(local.querySelectorAll('button')).find((b) => b.textContent === 'Activate')!;
+    activate.click();
+    const msg = sent.find((m) => m.type === 'setActive');
+    expect((msg as unknown as { id: string | null }).id).toBeNull();
   });
 
   it('marks the active profile and hides its Activate button', () => {
@@ -97,13 +143,15 @@ describe('endpoints panel bundle (dist/media/endpoints.js)', () => {
       remote: false,
       connected: true,
       baseUrl: 'http://127.0.0.1:8642',
+      localUrl: 'http://127.0.0.1:8642',
     } as unknown as HostMsg);
     const rows = dom.window.document.querySelectorAll('.endpoint');
-    expect(rows.length).toBe(2);
-    expect(rows[0].classList.contains('active')).toBe(true);
-    expect(rows[0].textContent).toContain('active');
-    expect(Array.from(rows[0].querySelectorAll('button')).some((b) => b.textContent === 'Activate')).toBe(false);
-    expect(Array.from(rows[1].querySelectorAll('button')).some((b) => b.textContent === 'Activate')).toBe(true);
+    expect(rows.length).toBe(3); // Local + 2 profiles
+    const profile = rows[1];
+    expect(profile.classList.contains('active')).toBe(true);
+    expect(profile.textContent).toContain('active');
+    expect(Array.from(profile.querySelectorAll('button')).some((b) => b.textContent === 'Activate')).toBe(false);
+    expect(Array.from(rows[2].querySelectorAll('button')).some((b) => b.textContent === 'Activate')).toBe(true);
   });
 
   it('Add posts an add message with trimmed name/url and clears the form', () => {
@@ -158,9 +206,10 @@ describe('endpoints panel bundle (dist/media/endpoints.js)', () => {
       remote: true,
       connected: false,
       baseUrl: 'http://10.0.0.5:8642',
+      localUrl: 'http://127.0.0.1:8642',
     } as unknown as HostMsg);
     post({ type: 'testResult', id: 'e1', ok: false, detail: 'Unreachable: ECONNREFUSED' } as unknown as HostMsg);
-    const row = dom.window.document.querySelector('.endpoint')!;
+    const row = dom.window.document.querySelectorAll('.endpoint')[1];
     expect(row.querySelector('.test-result')?.textContent).toContain('ECONNREFUSED');
   });
 });

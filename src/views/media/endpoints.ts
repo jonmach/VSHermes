@@ -36,6 +36,7 @@ interface PanelState {
   remote: boolean;
   connected: boolean;
   baseUrl: string;
+  localUrl: string;
   testResults: Map<string, { ok: boolean; detail: string }>;
 }
 
@@ -46,6 +47,7 @@ const state: PanelState = {
   remote: false,
   connected: false,
   baseUrl: '',
+  localUrl: 'http://127.0.0.1:8642',
   testResults: new Map(),
 };
 
@@ -85,6 +87,7 @@ function onHostMessage(msg: EndpointsHostMessage): void {
     state.remote = msg.remote;
     state.connected = msg.connected;
     state.baseUrl = msg.baseUrl;
+    state.localUrl = msg.localUrl;
     render();
   } else if (msg.type === 'testResult') {
     state.testResults.set(msg.id, { ok: msg.ok, detail: msg.detail });
@@ -103,11 +106,14 @@ function escapeHtml(s: string): string {
 
 function render(): void {
   listEl.innerHTML = '';
+  // The built-in Local connection always exists — activate it to return to
+  // the legacy resolution (baseUrl setting → Hermes .env → default).
+  listEl.appendChild(renderLocalRow());
   if (state.endpoints.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'empty';
     empty.textContent =
-      'No endpoints yet. Add one below — e.g. a remote machine running the Hermes API server (http://host:8642).';
+      'No custom endpoints yet. Add one below — e.g. a remote machine running the Hermes API server (http://host:8642).';
     listEl.appendChild(empty);
   }
   for (const ep of state.endpoints) {
@@ -116,17 +122,31 @@ function render(): void {
   statusEl.textContent = state.connected
     ? `● connected to ${state.baseUrl}${state.remote ? ' (remote)' : ''}`
     : `○ ${state.baseUrl}${state.remote ? ' (remote)' : ''}`;
+  statusEl.classList.remove('note');
 }
 
-function renderRow(ep: EndpointProfile): HTMLElement {
+/** The built-in "Local connection" row — the legacy no-profile endpoint. */
+function renderLocalRow(): HTMLElement {
+  const ep: EndpointProfile = { id: 'local', name: 'Local connection', url: state.localUrl };
+  const row = renderRow(ep, true);
+  const keyBadge = row.querySelector('.key-badge');
+  if (keyBadge) {
+    keyBadge.textContent = 'legacy key';
+    keyBadge.className = 'badge ok';
+  }
+  return row;
+}
+
+function renderRow(ep: EndpointProfile, isLocal = false): HTMLElement {
+  const active = isLocal ? state.activeId === null : ep.id === state.activeId;
   const row = document.createElement('div');
-  row.className = 'endpoint' + (ep.id === state.activeId ? ' active' : '');
+  row.className = 'endpoint' + (active ? ' active' : '');
 
   const head = document.createElement('div');
   head.className = 'head';
   const title = document.createElement('span');
   title.className = 'name';
-  title.textContent = `${ep.name}${ep.id === state.activeId ? ' — active' : ''}`;
+  title.textContent = `${ep.name}${active ? ' — active' : ''}`;
   const badges = document.createElement('span');
   badges.className = 'badges';
   const remoteBadge = document.createElement('span');
@@ -134,68 +154,76 @@ function renderRow(ep: EndpointProfile): HTMLElement {
   remoteBadge.textContent = isRemote(ep.url) ? 'remote — attach disabled' : 'local — attach enabled';
   badges.appendChild(remoteBadge);
   const keyBadge = document.createElement('span');
-  keyBadge.className = 'badge ' + (state.keySet.includes(ep.id) ? 'ok' : 'warn');
+  keyBadge.className = 'badge key-badge ' + (state.keySet.includes(ep.id) ? 'ok' : 'warn');
   keyBadge.textContent = state.keySet.includes(ep.id) ? 'key ✓' : 'no key';
   badges.appendChild(keyBadge);
   head.appendChild(title);
   head.appendChild(badges);
   row.appendChild(head);
 
-  // Editable fields.
-  const fields = document.createElement('div');
-  fields.className = 'fields';
-  const nameInput = document.createElement('input');
-  nameInput.className = 'name-in';
-  nameInput.value = ep.name;
-  const urlInput = document.createElement('input');
-  urlInput.className = 'url-in';
-  urlInput.value = ep.url;
-  fields.appendChild(nameInput);
-  fields.appendChild(urlInput);
-  row.appendChild(fields);
+  // Editable fields (custom profiles only — Local is the legacy chain).
+  let nameInput: HTMLInputElement | undefined;
+  let urlInput: HTMLInputElement | undefined;
+  if (!isLocal) {
+    const fields = document.createElement('div');
+    fields.className = 'fields';
+    nameInput = document.createElement('input');
+    nameInput.className = 'name-in';
+    nameInput.value = ep.name;
+    urlInput = document.createElement('input');
+    urlInput.className = 'url-in';
+    urlInput.value = ep.url;
+    fields.appendChild(nameInput);
+    fields.appendChild(urlInput);
+    row.appendChild(fields);
 
-  // Key entry (stored host-side in SecretStorage).
-  const keyRow = document.createElement('div');
-  keyRow.className = 'keyrow';
-  const keyInput = document.createElement('input');
-  keyInput.type = 'password';
-  keyInput.placeholder = 'API key (SecretStorage)';
-  const keyBtn = document.createElement('button');
-  keyBtn.textContent = 'Save key';
-  keyBtn.onclick = () => {
-    if (keyInput.value.trim()) post({ type: 'setKey', id: ep.id, key: keyInput.value.trim() });
-    keyInput.value = '';
-  };
-  keyRow.appendChild(keyInput);
-  keyRow.appendChild(keyBtn);
-  row.appendChild(keyRow);
+    // Key entry (stored host-side in SecretStorage).
+    const keyRow = document.createElement('div');
+    keyRow.className = 'keyrow';
+    const keyInput = document.createElement('input');
+    keyInput.type = 'password';
+    keyInput.placeholder = 'API key (SecretStorage)';
+    const keyBtn = document.createElement('button');
+    keyBtn.textContent = 'Save key';
+    keyBtn.onclick = () => {
+      if (keyInput.value.trim()) post({ type: 'setKey', id: ep.id, key: keyInput.value.trim() });
+      keyInput.value = '';
+    };
+    keyRow.appendChild(keyInput);
+    keyRow.appendChild(keyBtn);
+    row.appendChild(keyRow);
+  }
 
   // Actions.
   const actions = document.createElement('div');
   actions.className = 'actions';
-  if (ep.id !== state.activeId) {
+  if (!active) {
     const activate = document.createElement('button');
     activate.textContent = 'Activate';
-    activate.onclick = () => post({ type: 'setActive', id: ep.id });
+    activate.onclick = () => post({ type: 'setActive', id: isLocal ? null : ep.id });
     actions.appendChild(activate);
   }
-  const save = document.createElement('button');
-  save.textContent = 'Save';
-  save.onclick = () => {
-    if (nameInput.value.trim() && urlInput.value.trim()) {
-      post({ type: 'update', id: ep.id, name: nameInput.value.trim(), url: urlInput.value.trim() });
-    }
-  };
-  actions.appendChild(save);
+  if (!isLocal) {
+    const save = document.createElement('button');
+    save.textContent = 'Save';
+    save.onclick = () => {
+      if (nameInput?.value.trim() && urlInput?.value.trim()) {
+        post({ type: 'update', id: ep.id, name: nameInput.value.trim(), url: urlInput.value.trim() });
+      }
+    };
+    actions.appendChild(save);
+  }
   const test = document.createElement('button');
   test.textContent = 'Test';
   test.onclick = () => post({ type: 'test', id: ep.id });
   actions.appendChild(test);
-  const remove = document.createElement('button');
-  remove.className = 'danger';
-  remove.textContent = 'Remove';
-  remove.onclick = () => post({ type: 'remove', id: ep.id });
-  actions.appendChild(remove);
+  if (!isLocal) {
+    const remove = document.createElement('button');
+    remove.className = 'danger';
+    remove.textContent = 'Remove';
+    remove.onclick = () => post({ type: 'remove', id: ep.id });
+    actions.appendChild(remove);
+  }
   row.appendChild(actions);
 
   // Test result line.

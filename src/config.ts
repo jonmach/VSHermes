@@ -62,14 +62,9 @@ export async function setEndpointApiKey(
 
 // ── effective values ──────────────────────────────────────────────
 
-/**
- * Effective API server base URL:
- * active endpoint profile → explicit setting (vsh.hermes.baseUrl) →
- * Hermes .env (API_SERVER_HOST:PORT) → default http://127.0.0.1:8642.
- */
-export function getBaseUrl(): string {
-  const active = getActiveEndpoint();
-  if (active?.url) return active.url;
+/** The legacy (no-profile) resolution — what the built-in "Local
+ *  connection" points at: explicit setting → Hermes .env → default. */
+export function getLocalUrl(): string {
   const cfg = vscode.workspace.getConfiguration('vsh.hermes');
   const inspected = cfg.inspect<string>('baseUrl');
   const explicit = inspected?.globalValue ?? inspected?.workspaceValue;
@@ -79,6 +74,16 @@ export function getBaseUrl(): string {
   const hermesEnv = resolveHermesEnv();
   if (hermesEnv) return hermesEnv.baseUrl;
   return 'http://127.0.0.1:8642';
+}
+
+/**
+ * Effective API server base URL:
+ * active endpoint profile → legacy resolution (getLocalUrl).
+ */
+export function getBaseUrl(): string {
+  const active = getActiveEndpoint();
+  if (active?.url) return active.url;
+  return getLocalUrl();
 }
 
 /** Where the API key was found (for logging/diagnostics). */

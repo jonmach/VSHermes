@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error — dist/src/endpointCore.js exists after `npm run compile`
-import { isRemoteUrl, makeEndpointId, normalizeUrl } from '../dist/src/endpointCore';
+import { endpointLabel, isRemoteUrl, LOCAL_ENDPOINT_ID, makeEndpointId, normalizeUrl } from '../dist/src/endpointCore';
 
 describe('endpoint core (dist/src/endpointCore.js)', () => {
   it('treats loopback hosts as local', () => {
@@ -39,5 +39,13 @@ describe('endpoint core (dist/src/endpointCore.js)', () => {
     expect(a).toMatch(/^home-server-/);
     expect(a).not.toBe(b); // timestamp suffix
     expect(makeEndpointId('!!!')).toMatch(/^endpoint-/);
+  });
+
+  it('labels endpoints for the history tree and panel', () => {
+    const endpoints = [{ id: 'e1', name: 'Home server', url: 'http://10.0.0.5:8642' }];
+    expect(endpointLabel(null, endpoints)).toBe('Local');
+    expect(endpointLabel(LOCAL_ENDPOINT_ID, endpoints)).toBe('Local');
+    expect(endpointLabel('e1', endpoints)).toBe('Home server');
+    expect(endpointLabel('missing', endpoints)).toBe('missing');
   });
 });
