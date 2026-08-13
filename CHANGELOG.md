@@ -13,6 +13,10 @@
   Allow/Deny buttons were rendered but unreachable. It now covers the
   whole panel viewport (`position: fixed`) and the box caps at 85vh with
   internal scrolling for long command payloads.
+- **Approval choices actually approve** — the approval POST sent the
+  decision under `decision`, but the API server reads `choice` (values
+  `once`/`session`/`always`/`deny`), so every click failed with
+  `400 Invalid approval choice`. The payload now uses `choice`.
 - **Live transcript refresh** — the open session's messages are re-fetched
   every 10s while idle (no active stream), so a session being written by
   the TUI or another window updates in place: new turns and tool cards

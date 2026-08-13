@@ -312,9 +312,12 @@ export class HermesClient {
   }
 
   approveRun(runId: string, decision: ApprovalDecision): Promise<unknown> {
+    // The API server reads the `choice` field (values: once/session/always/
+    // deny) — sending `decision` made every approval fail with 400
+    // "Invalid approval choice".
     return this.request(`/v1/runs/${encodeURIComponent(runId)}/approval`, {
       method: 'POST',
-      body: JSON.stringify({ decision }),
+      body: JSON.stringify({ choice: decision }),
     });
   }
 
