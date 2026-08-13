@@ -38,7 +38,7 @@ import { messagesToMarkdown } from './exportMarkdown';
 import { enrichImageRefs } from './imageRefs';
 import { ChatViewProvider } from './views/chatProvider';
 import { HistoryProvider } from './views/historyProvider';
-import type { WebviewMessage } from './views/media/protocol';
+import type { FileEntry, WebviewMessage } from './views/media/protocol';
 
 export function activate(context: vscode.ExtensionContext): VSHermes {
   return new VSHermes(context);
@@ -289,19 +289,19 @@ class VSHermes {
         '**/{node_modules,.git}/**',
         500,
       );
-      const files = uris
+      const files: FileEntry[] = uris
         .map((u) => {
           for (const f of folders) {
             const rel = path.relative(f.uri.fsPath, u.fsPath);
             if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) {
-              return rel.split(path.sep).join('/');
+              return { rel: rel.split(path.sep).join('/'), abs: u.fsPath };
             }
           }
           return null;
         })
-        .filter((r): r is string => r !== null)
-        .filter((r) => (q ? r.toLowerCase().includes(q) : true))
-        .sort()
+        .filter((r): r is FileEntry => r !== null)
+        .filter((r) => (q ? r.rel.toLowerCase().includes(q) : true))
+        .sort((a, b) => a.rel.localeCompare(b.rel))
         .slice(0, 50);
       this.view.post({ type: 'fileResults', query, files });
     } catch {

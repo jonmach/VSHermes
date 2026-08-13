@@ -16,7 +16,7 @@ import type {
   MessagePart,
   StreamEvent,
 } from '../../api/types';
-import type { HostMessage, WebviewMessage } from './protocol';
+import type { FileEntry, HostMessage, WebviewMessage } from './protocol';
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -96,11 +96,12 @@ const state: {
   slashIndex: number;
   slashQuery: string;
   popupMode: 'slash' | 'file' | null;
-  fileResults: string[];
+  fileResults: FileEntry[];
   fileQuery: string;
   fileIndex: number;
   fileDebounce: ReturnType<typeof setTimeout> | undefined;
   filePostedQuery: string | null;
+  mentionStart: number;
   maxImageBytes: number;
   maxImageDimension: number;
 } = {
@@ -122,6 +123,7 @@ const state: {
   fileIndex: 0,
   fileDebounce: undefined,
   filePostedQuery: null,
+  mentionStart: 0,
   maxImageBytes: 8 * 1024 * 1024,
   maxImageDimension: 4096,
 };
@@ -593,15 +595,6 @@ function popupVisible(): boolean {
   return slashPopup.classList.contains('show');
 }
 
-function popupMode(): 'slash' | 'file' | null {
-  const text = inputEl.value;
-  const lineStart = text.lastIndexOf('\n') + 1;
-  const line = text.slice(lineStart);
-  if (/^\//.test(line)) return 'slash';
-  if (/^@/.test(line)) return 'file';
-  return null;
-}
-
 function updatePopup(): void {
   const text = inputEl.value;
   const lineStart = text.lastIndexOf('\n') + 1;
@@ -612,9 +605,13 @@ function updatePopup(): void {
     renderSlashItems(sm[1]);
     return;
   }
-  const fm = /^@(?:file\s+)?(\S*)$/.exec(line);
+  // The last '@' anywhere on the current line triggers the file picker —
+  // the mention must be the final token on the line, so typing prose after
+  // it dismisses the popup naturally.
+  const fm = /@(?:file\s+)?(\S*)$/.exec(line);
   if (fm) {
     state.popupMode = 'file';
+    state.mentionStart = lineStart + fm.index;
     renderFileItems(fm[1]);
     return;
   }
@@ -663,22 +660,21 @@ function renderFileItems(query: string): void {
   items.forEach((f, i) => {
     const el = document.createElement('div');
     el.className = 'slash-item' + (i === state.fileIndex ? ' selected' : '');
-    el.innerHTML = `<span class="sname">@file ${escapeHtml(f)}</span><span class="skind">file</span>`;
-    el.onclick = () => selectFile(f);
+    el.innerHTML = `<span class="sname">@file ${escapeHtml(f.rel)}</span><span class="skind">file</span>`;
+    el.onclick = () => selectFile(f.abs);
     slashPopup.appendChild(el);
   });
   slashPopup.classList.add('show');
 }
 
-function filteredFiles(): string[] {
+function filteredFiles(): FileEntry[] {
   const q = state.fileQuery.toLowerCase();
-  return state.fileResults.filter((f) => f.toLowerCase().includes(q));
+  return state.fileResults.filter((f) => f.rel.toLowerCase().includes(q));
 }
 
-function selectFile(filePath: string): void {
+function selectFile(absPath: string): void {
   hideSlashPopup();
-  const lineStart = inputEl.value.lastIndexOf('\n') + 1;
-  inputEl.value = inputEl.value.slice(0, lineStart) + `@file ${filePath}`;
+  inputEl.value = inputEl.value.slice(0, state.mentionStart) + `@file ${absPath}`;
   inputEl.focus();
 }
 
@@ -872,7 +868,7 @@ inputEl.addEventListener('keydown', (e) => {
       e.preventDefault();
       if (fileMode) {
         const f = filteredFiles()[state.fileIndex];
-        if (f) selectFile(f);
+        if (f) selectFile(f.abs);
       } else {
         const items = filterSlash(state.slashQuery);
         const c = items[state.slashIndex];

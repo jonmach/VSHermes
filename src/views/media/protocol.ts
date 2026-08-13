@@ -27,7 +27,15 @@ export type HostMessage =
   | { type: 'info'; text: string }
   | { type: 'error'; message: string }
   | { type: 'model'; model: string | null }
-  | { type: 'fileResults'; query: string; files: string[] };
+  | { type: 'fileResults'; query: string; files: FileEntry[] };
+
+/** A workspace file offered by the @file picker. */
+export interface FileEntry {
+  /** Path relative to the workspace root (display + filter). */
+  rel: string;
+  /** Absolute filesystem path (inserted into the message). */
+  abs: string;
+}
 
 // ── Webview → Host ─────────────────────────────────────────────────
 

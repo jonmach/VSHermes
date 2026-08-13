@@ -321,14 +321,38 @@ describe('webview bundle (dist/media/chat.js)', () => {
     const q = sent.find((m) => m.type === 'fileQuery');
     expect(q).toBeDefined();
     expect((q as unknown as { query: string }).query).toBe('');
-    post({ type: 'fileResults', query: '', files: ['src/foo.ts', 'src/bar.ts'] } as unknown as HostMsg);
+    post({
+      type: 'fileResults',
+      query: '',
+      files: [
+        { rel: 'src/foo.ts', abs: '/ws/src/foo.ts' },
+        { rel: 'src/bar.ts', abs: '/ws/src/bar.ts' },
+      ],
+    } as unknown as HostMsg);
     const items = dom.window.document.querySelectorAll('#slash-popup .slash-item');
     expect(items.length).toBe(2);
     expect(items[0].textContent).toContain('src/foo.ts');
-    // Enter selects the highlighted file and closes the popup.
+    // Enter selects the highlighted file (absolute path) and closes the popup.
     input.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
-    expect(input.value).toBe('@file src/foo.ts');
+    expect(input.value).toBe('@file /ws/src/foo.ts');
     expect(dom.window.document.getElementById('slash-popup')!.classList.contains('show')).toBe(false);
+  });
+
+  it('@ works mid-line and replaces only the mention token', async () => {
+    const { dom, sent, post, input } = bootWebview();
+    input.value = 'please check @CHAN';
+    input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    expect(dom.window.document.getElementById('slash-popup')!.classList.contains('show')).toBe(true);
+    await new Promise((r) => setTimeout(r, 300));
+    const q = sent.find((m) => m.type === 'fileQuery');
+    expect((q as unknown as { query: string }).query).toBe('CHAN');
+    post({
+      type: 'fileResults',
+      query: 'CHAN',
+      files: [{ rel: 'CHANGELOG.md', abs: '/ws/CHANGELOG.md' }],
+    } as unknown as HostMsg);
+    input.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    expect(input.value).toBe('please check @file /ws/CHANGELOG.md');
   });
 
   it('adds a copy button to the thinking block', () => {

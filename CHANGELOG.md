@@ -2,9 +2,9 @@
 
 ## 2.0.1 (2026-08-13)
 
-- **`@file` mentions** — typing `@` opens a workspace file picker (files
-  whose path contains the query, live as you type); selecting one inserts
-  `@file <path>` as a filename reference in the message. No content
+- **`@file` mentions** — `@` anywhere in the message opens a workspace file
+  picker (files whose path contains the query, live as you type); selecting
+  one inserts `@file <absolute path>` as a filename reference. No content
   inlining — Hermes reads the file itself via its own tools when it needs
   it. (Earlier draft inlined file contents; dropped by design to keep the
   prompt lean and let sub-agents read on demand.)
