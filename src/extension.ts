@@ -7,6 +7,7 @@
  */
 
 import * as vscode from 'vscode';
+import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { HermesApiError, HermesClient, StreamHandle } from './api/client';
@@ -36,6 +37,7 @@ import { resolveHermesEnv } from './hermesEnv';
 import { buildMessage, resolveImageMode } from './imageTransfer';
 import { messagesToMarkdown } from './exportMarkdown';
 import { enrichImageRefs } from './imageRefs';
+import { expandFileMentions, MAX_FILE_MENTION_BYTES } from './fileMentions';
 import { ChatViewProvider } from './views/chatProvider';
 import { HistoryProvider } from './views/historyProvider';
 import type { WebviewMessage } from './views/media/protocol';
@@ -472,6 +474,23 @@ class VSHermes {
       this.sessionId = sessionId;
       this.activeRunId = null;
     }
+    // @file mentions: inline referenced files into the message text. Pure
+    // client-side — the API has no file endpoints.
+    parts = parts.map((p) => {
+      if (p.type !== 'text') return p;
+      const res = expandFileMentions(
+        p.text,
+        (m) => this.resolveMentionPath(m),
+        (abs) => this.readMentionFile(abs),
+      );
+      if (res.resolved.length > 0 || res.unresolved.length > 0) {
+        this.logInfo(`@file: inlined ${res.resolved.length}, unresolved ${res.unresolved.length}`);
+      }
+      if (res.unresolved.length > 0) {
+        this.view.postInfo(`@file: could not resolve ${res.unresolved.join(', ')}`);
+      }
+      return { type: 'text', text: res.text };
+    });
     // Image transfer strategy: text-only main models reject image_url parts
     // with 400, so file mode saves images to disk and references the path
     // (the agent's own vision fallback chain does the analysis).
@@ -517,6 +536,38 @@ class VSHermes {
       void this.refreshSessionAfterRun(sid);
     } catch (err) {
       this.reportError(err);
+    }
+  }
+
+  /** @file mention → absolute path of an existing file, or null. */
+  private resolveMentionPath(mention: string): string | null {
+    const p = path.normalize(mention);
+    const candidates: string[] = [];
+    if (path.isAbsolute(p)) {
+      candidates.push(p);
+    } else {
+      for (const folder of vscode.workspace.workspaceFolders ?? []) {
+        candidates.push(path.join(folder.uri.fsPath, p));
+      }
+    }
+    return (
+      candidates.find((c) => {
+        try {
+          return fs.statSync(c).isFile();
+        } catch {
+          return false;
+        }
+      }) ?? null
+    );
+  }
+
+  /** @file mention → file content, or null (missing / unreadable / too large). */
+  private readMentionFile(abs: string): string | null {
+    try {
+      if (fs.statSync(abs).size > MAX_FILE_MENTION_BYTES) return null;
+      return fs.readFileSync(abs, 'utf8');
+    } catch {
+      return null;
     }
   }
 

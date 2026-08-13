@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 2.0.1 (2026-08-13)
+
+- **`@file` mentions** — type `@file src/foo.ts` in the chat input and the
+  file's content is inlined into the message as a fenced block (relative
+  paths resolve against the workspace, absolute paths work too; unresolved
+  or oversized mentions are left in place and flagged in chat). Pure
+  client-side — no Hermes file endpoints needed.
 
 - **Chat window resets on session change** — `/new`, `/clear` and deleting
   the current session now clear the message list (webview rule: a `state`

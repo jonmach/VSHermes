@@ -27,6 +27,9 @@ model switching.
   webview, no host round-trip
 - `/new`, `/clear` and deleting the current session **reset the chat
   window** — the view always shows the current session's messages
+- **`@file` mentions** — `@file src/foo.ts` in the input inlines the file's
+  content into the message as a fenced block (workspace-relative or
+  absolute; unresolved mentions stay as text and are flagged)
 
 **Images**
 - Paste or drag-drop into the chat; chips show pending attachments
@@ -205,7 +208,7 @@ command, or `npm run check-sync` (standalone script).
 ## Roadmap
 
 - Diff/checkpoint review for file changes (Hermes `checkpoints` integration)
-- `@file` workspace mentions with AGENTS.md context injection per workspace
+- AGENTS.md context injection per workspace
 - Runs/SSE activity feed for standalone `/v1/runs` submissions
 - Webview terminal output rendering for tool results
 
