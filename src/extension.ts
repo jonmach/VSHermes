@@ -36,7 +36,7 @@ import {
   setActiveEndpoint,
   setEndpointApiKey,
 } from './config';
-import { endpointLabel, isRemoteUrl, LOCAL_ENDPOINT_ID, makeEndpointId, normalizeUrl } from './endpointCore';
+import { canonicalUrl, isRemoteUrl, LOCAL_ENDPOINT_ID, makeEndpointId, normalizeUrl } from './endpointCore';
 import { SLASH_COMMANDS, SlashHandlerId } from './slash/commands';
 import { currentServerTarget, sessionTargetFromArg, type SessionTarget } from './sessionArg';
 import { StatusBar } from './statusbar';
@@ -72,6 +72,11 @@ class VSHermes {
   /** Base URL the current session was established against — endpoint
    *  switches that change it reset the session (server-scoped ids). */
   private lastBaseUrl: string | null = null;
+  /** Concurrent connectAndSync calls share one run (endpoint switches fire
+   *  both the settings handler and the switch flow). */
+  private connectPromise: Promise<void> | null = null;
+  /** The "/help" welcome posts once per activation, not per reconnect. */
+  private welcomed = false;
   private readonly log = vscode.window.createOutputChannel('VSHermes');
 
   /** Observable test surface — exposed via extension.exports. */
@@ -90,8 +95,9 @@ class VSHermes {
     this.statusBar = new StatusBar('vsh.hermes.focusChat');
     this.view = new ChatViewProvider(context.extensionUri);
     this.history = new HistoryProvider({
-      endpointLabel: (id) => endpointLabel(id, getEndpoints()),
-      endpointRemote: (id) => this.endpointIsRemote(id),
+      endpointLabel: (url) => this.endpointForUrl(url).label,
+      endpointRemote: (url) => isRemoteUrl(url),
+      endpointIdForUrl: (url) => this.endpointForUrl(url).id,
     });
     this.endpointsPanel = new EndpointsPanel(context.extensionUri);
 
@@ -165,7 +171,17 @@ class VSHermes {
 
   // ── connection ────────────────────────────────────────────────────
 
-  private async connectAndSync(): Promise<void> {
+  /** Reconnect + resync. Concurrent callers share one run — endpoint
+   *  switches trigger both the settings handler and the switch flow. */
+  private connectAndSync(): Promise<void> {
+    if (this.connectPromise) return this.connectPromise;
+    this.connectPromise = this.doConnectAndSync().finally(() => {
+      this.connectPromise = null;
+    });
+    return this.connectPromise;
+  }
+
+  private async doConnectAndSync(): Promise<void> {
     try {
       const c = await this.ensureClient();
       this.health = await c.health();
@@ -176,6 +192,10 @@ class VSHermes {
       // (client was nulled); a successful connect must push connected:true
       // or the badge stays stale until a health-poll transition.
       this.view.post(this.chatState());
+      if (getCheckSyncOnStartup() && !this.welcomed) {
+        this.welcomed = true;
+        this.view.postInfo(`Connected to Hermes ${this.health.version}. Type /help for commands.`);
+      }
     } catch (err) {
       this.health = null;
       this.caps = null;
@@ -194,9 +214,6 @@ class VSHermes {
     }
     await this.runSyncCheck(false);
     void this.listSessions();
-    if (getCheckSyncOnStartup()) {
-      this.view.postInfo(`Connected to Hermes ${this.health.version}. Type /help for commands.`);
-    }
   }
 
   /** Full chat state snapshot (ready + every endpoint/connection change). */
@@ -324,10 +341,14 @@ class VSHermes {
     return getActiveEndpoint()?.id ?? LOCAL_ENDPOINT_ID;
   }
 
-  private endpointIsRemote(id: string): boolean {
-    if (id === LOCAL_ENDPOINT_ID) return isRemoteUrl(getLocalUrl());
-    const ep = getEndpoints().find((e) => e.id === id);
-    return ep ? isRemoteUrl(ep.url) : false;
+  /** Resolve a server URL (session-cache key) to an endpoint id + label.
+   *  Two profiles pointing at the same server share one identity, so the
+   *  first matching profile wins. */
+  private endpointForUrl(url: string): { id: string; label: string } {
+    const canonical = canonicalUrl(url);
+    const profile = getEndpoints().find((e) => canonicalUrl(e.url) === canonical);
+    if (profile) return { id: profile.id, label: profile.name };
+    return { id: LOCAL_ENDPOINT_ID, label: 'Local' };
   }
 
   /** Switch the active endpoint (auto-switch on session open) and wait for
@@ -345,11 +366,19 @@ class VSHermes {
 
   // ── session cache (history grouped per server) ───────────────────
 
+  /** Cached sessions keyed by canonical server URL (not endpoint id — two
+   *  profiles on one server must collapse into a single section). */
   private getSessionCache(): Record<string, SessionSummary[]> {
-    return this.context.globalState.get<Record<string, SessionSummary[]>>(
+    const raw = this.context.globalState.get<Record<string, SessionSummary[]>>(
       'vsh.hermes.sessionsByEndpoint',
       {},
     );
+    // Drop legacy endpoint-id keys (pre-URL-keying caches).
+    const out: Record<string, SessionSummary[]> = {};
+    for (const [k, v] of Object.entries(raw)) {
+      if (/^https?:\/\//i.test(k)) out[k] = v;
+    }
+    return out;
   }
 
   private async setSessionCache(cache: Record<string, SessionSummary[]>): Promise<void> {
@@ -705,7 +734,7 @@ class VSHermes {
       const c = await this.ensureClient();
       const res = await c.listSessions(200);
       const cache = this.getSessionCache();
-      cache[this.currentEndpointId()] = res.data;
+      cache[canonicalUrl(getBaseUrl())] = res.data;
       await this.setSessionCache(cache);
       this.history.refresh(cache);
       this.view.post({ type: 'sessions', sessions: res.data });

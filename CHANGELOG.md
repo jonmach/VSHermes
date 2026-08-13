@@ -33,6 +33,10 @@
   with an attach-enabled/disabled badge. **Opening a session
   auto-switches to its server**, reconnects, then loads it; fork/delete
   auto-switch too, and an unreachable server aborts with a clear error.
+- **No duplicate sessions or welcome spam** — the session cache is keyed
+  by canonical server URL, so two profiles pointing at the same machine
+  collapse into one history section; concurrent reconnects share one run
+  and the "/help" welcome posts once per activation instead of per switch.
 
 ## 2.0.1 (2026-08-13)
 

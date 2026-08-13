@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error — dist/src/endpointCore.js exists after `npm run compile`
-import { endpointLabel, isRemoteUrl, LOCAL_ENDPOINT_ID, makeEndpointId, normalizeUrl } from '../dist/src/endpointCore';
+import { canonicalUrl, endpointLabel, isRemoteUrl, LOCAL_ENDPOINT_ID, makeEndpointId, normalizeUrl } from '../dist/src/endpointCore';
 
 describe('endpoint core (dist/src/endpointCore.js)', () => {
   it('treats loopback hosts as local', () => {
@@ -39,6 +39,16 @@ describe('endpoint core (dist/src/endpointCore.js)', () => {
     expect(a).toMatch(/^home-server-/);
     expect(a).not.toBe(b); // timestamp suffix
     expect(makeEndpointId('!!!')).toMatch(/^endpoint-/);
+  });
+
+  it('canonicalizes server URLs (case + trailing slash collapse)', () => {
+    expect(canonicalUrl('http://192.168.1.44:8642')).toBe('http://192.168.1.44:8642');
+    expect(canonicalUrl('http://192.168.1.44:8642/')).toBe('http://192.168.1.44:8642');
+    expect(canonicalUrl('HTTP://192.168.1.44:8642////')).toBe('http://192.168.1.44:8642');
+    expect(canonicalUrl('http://localhost:8642')).toBe('http://localhost:8642');
+    expect(canonicalUrl('not a url')).toBe('not a url');
+    // Two profiles on the same server share one canonical key.
+    expect(canonicalUrl('http://10.0.0.5:8642/')).toBe(canonicalUrl('http://10.0.0.5:8642'));
   });
 
   it('labels endpoints for the history tree and panel', () => {

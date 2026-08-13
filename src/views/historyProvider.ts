@@ -23,13 +23,14 @@ export type HistoryTreeItem = SessionSectionItem | SessionTreeItem;
 
 export class SessionSectionItem extends vscode.TreeItem {
   constructor(
-    readonly endpointId: string,
+    /** Canonical server URL — the session-cache key. */
+    readonly serverKey: string,
     label: string,
     remote: boolean,
     count: number,
   ) {
     super(`${label}${remote ? ' — remote' : ''} (${count})`, vscode.TreeItemCollapsibleState.Expanded);
-    this.id = `section:${endpointId}`;
+    this.id = `section:${serverKey}`;
     this.description = remote ? 'attach disabled' : 'attach enabled';
     this.contextValue = 'section';
     this.iconPath = new vscode.ThemeIcon('server');
@@ -38,6 +39,7 @@ export class SessionSectionItem extends vscode.TreeItem {
 
 export class SessionTreeItem extends vscode.TreeItem {
   constructor(
+    /** Resolved endpoint id the session lives on (for auto-switch). */
     readonly endpointId: string,
     readonly session: SessionSummary,
   ) {
@@ -69,10 +71,12 @@ function relativeTime(ts: number): string {
 }
 
 export interface HistoryContext {
-  /** Display label for an endpoint id ('Local', profile names). */
-  endpointLabel(id: string): string;
-  /** True when the endpoint is a non-loopback (remote) host. */
-  endpointRemote(id: string): boolean;
+  /** Display label for a canonical server URL. */
+  endpointLabel(url: string): string;
+  /** True when the server URL is a non-loopback (remote) host. */
+  endpointRemote(url: string): boolean;
+  /** Resolve a server URL to the endpoint id to switch to on open. */
+  endpointIdForUrl(url: string): string;
 }
 
 export class HistoryProvider implements vscode.TreeDataProvider<HistoryTreeItem> {
@@ -111,33 +115,34 @@ export class HistoryProvider implements vscode.TreeDataProvider<HistoryTreeItem>
       return this.sections();
     }
     if (element instanceof SessionSectionItem) {
-      const sessions = this.filtered(element.endpointId);
-      return [...sessions].sort((a, b) => b.last_active - a.last_active).map((s) => new SessionTreeItem(element.endpointId, s));
+      const sessions = this.filtered(element.serverKey);
+      const ep = this.ctx.endpointIdForUrl(element.serverKey);
+      return [...sessions].sort((a, b) => b.last_active - a.last_active).map((s) => new SessionTreeItem(ep, s));
     }
     return [];
   }
 
   private sections(): SessionSectionItem[] {
     const out: SessionSectionItem[] = [];
-    for (const [ep, sessions] of Object.entries(this.cache)) {
+    for (const [url, sessions] of Object.entries(this.cache)) {
       const filtered = filterSessions(sessions, this.filterText);
       if (filtered.length === 0) continue;
-      out.push(new SessionSectionItem(ep, this.ctx.endpointLabel(ep), this.ctx.endpointRemote(ep), filtered.length));
+      out.push(new SessionSectionItem(url, this.ctx.endpointLabel(url), this.ctx.endpointRemote(url), filtered.length));
     }
     out.sort((a, b) => {
-      const newestA = this.newestActive(a.endpointId);
-      const newestB = this.newestActive(b.endpointId);
+      const newestA = this.newestActive(a.serverKey);
+      const newestB = this.newestActive(b.serverKey);
       return newestB - newestA;
     });
     return out;
   }
 
-  private filtered(endpointId: string): SessionSummary[] {
-    return filterSessions(this.cache[endpointId] ?? [], this.filterText);
+  private filtered(serverKey: string): SessionSummary[] {
+    return filterSessions(this.cache[serverKey] ?? [], this.filterText);
   }
 
-  private newestActive(endpointId: string): number {
-    const list = this.cache[endpointId] ?? [];
+  private newestActive(serverKey: string): number {
+    const list = this.cache[serverKey] ?? [];
     return list.length > 0 ? Math.max(...list.map((s) => s.last_active)) : 0;
   }
 }

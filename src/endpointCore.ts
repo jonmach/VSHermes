@@ -38,6 +38,17 @@ export function normalizeUrl(url: string): string | null {
 /** Sentinel endpoint id for the built-in "Local connection" (no profile). */
 export const LOCAL_ENDPOINT_ID = 'local';
 
+/** Canonical server key — collapses URL case/trailing-slash differences so
+ *  two profiles pointing at the same server share one identity. */
+export function canonicalUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.host}`;
+  } catch {
+    return url;
+  }
+}
+
 /** Stable-ish id from a name (slug + timestamp + random suffix — two
  *  profiles created in the same millisecond must not collide, ids scope
  *  SecretStorage keys). */
