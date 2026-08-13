@@ -123,6 +123,35 @@ export async function getApiKey(context: vscode.ExtensionContext): Promise<ApiKe
   return { key: undefined, source: 'none' };
 }
 
+/**
+ * Resolve the API key for an ARBITRARY endpoint (not just the active one):
+ * its own SecretStorage slot → any profile sharing its URL → generic
+ * SecretStorage key → env chain. Used by the activation guard, which must
+ * judge the TARGET endpoint before it becomes active.
+ */
+export async function getKeyForEndpoint(
+  context: vscode.ExtensionContext,
+  endpoint: EndpointProfile | null,
+  url: string,
+): Promise<string | undefined> {
+  if (endpoint) {
+    const own = await getEndpointApiKey(context, endpoint.id);
+    if (own) return own;
+    const canonical = canonicalUrl(url);
+    for (const ep of getEndpoints()) {
+      if (ep.id !== endpoint.id && canonicalUrl(ep.url) === canonical) {
+        const shared = await getEndpointApiKey(context, ep.id);
+        if (shared) return shared;
+      }
+    }
+  }
+  const stored = await context.secrets.get(SECRET_KEY);
+  if (stored) return stored;
+  const envKey = process.env.VSHERMES_API_KEY;
+  if (envKey) return envKey;
+  return resolveHermesEnv()?.apiKey;
+}
+
 export function getCheckSyncOnStartup(): boolean {
   return vscode.workspace.getConfiguration('vsh.hermes').get<boolean>('checkSyncOnStartup', true);
 }

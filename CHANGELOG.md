@@ -38,6 +38,10 @@
   an API key is refused at connect with a clear message; the panel badge
   shows `key required`, and Test reports the missing key instead of a
   false "OK". Keyless connections are only possible to loopback servers.
+  **Activating a keyless remote endpoint is refused too** — the endpoint
+  never becomes active (panel Activate and auto-switch on session open
+  both fail with a clear note; a key in the env chain still satisfies the
+  requirement).
 
 ## 2.0.2 (2026-08-13)
 

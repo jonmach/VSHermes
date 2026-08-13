@@ -26,6 +26,7 @@ import {
   getBaseUrl,
   getCheckSyncOnStartup,
   getEndpointApiKey,
+  getKeyForEndpoint,
   getEndpoints,
   getImageTransferMode,
   getLocalUrl,
@@ -376,9 +377,27 @@ class VSHermes {
   }
 
   /** Switch the active endpoint (auto-switch on session open) and wait for
-   *  the connection to land; false when the target is unreachable. */
+   *  the connection to land; false when the target is unreachable or a
+   *  keyless remote endpoint cannot be activated. */
   private async switchToEndpoint(endpointId: string): Promise<boolean> {
     if (endpointId === this.currentEndpointId()) return this.isConnected;
+    const profile = endpointId === LOCAL_ENDPOINT_ID ? null : getEndpoints().find((e) => e.id === endpointId) ?? null;
+    const url = profile ? profile.url : getLocalUrl();
+    // Remote endpoints require the server's API_SERVER_KEY — a keyless
+    // remote must never become the active endpoint (covers the panel
+    // Activate button and auto-switch on session open alike).
+    if (isRemoteUrl(url) && !(await getKeyForEndpoint(this.context, profile, url))) {
+      const label = profile?.name ?? 'this remote server';
+      this.endpointsPanel.post({
+        type: 'note',
+        text: `Cannot activate ${label} — remote endpoints require the server's API_SERVER_KEY (set it above and Save key).`,
+      });
+      this.view.post({
+        type: 'error',
+        message: `Cannot activate ${label}: remote endpoints require the server's API_SERVER_KEY — set it in the Endpoints panel first.`,
+      });
+      return false;
+    }
     await setActiveEndpoint(endpointId === LOCAL_ENDPOINT_ID ? null : endpointId);
     this.noteEndpointChange();
     this.client = null;
