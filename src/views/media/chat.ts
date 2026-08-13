@@ -123,9 +123,73 @@ function renderMarkdown(text: string): string {
 
 function setContent(el: HTMLElement, text: string): void {
   el.innerHTML = renderMarkdown(text);
+  addCopyButtons(el);
   // Keep scroll pinned to bottom while streaming.
   const atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 60;
   if (atBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+/** Copies text to the clipboard (async API with execCommand fallback). */
+async function writeClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
+
+function flashCopied(btn: HTMLButtonElement, label: string): void {
+  btn.textContent = '✓';
+  btn.title = 'Copied';
+  setTimeout(() => {
+    btn.textContent = '⧉';
+    btn.title = label;
+  }, 1200);
+}
+
+/** Hover-only copy button (class controls placement: msg-copy / thinking-copy). */
+function makeCopyButton(title: string, getText: () => string, className = 'msg-copy'): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.className = className;
+  btn.textContent = '⧉';
+  btn.title = title;
+  btn.addEventListener('click', () => {
+    void writeClipboard(getText()).then((ok) => {
+      if (ok) flashCopied(btn, title);
+    });
+  });
+  return btn;
+}
+
+/** Adds a copy button to every code block (idempotent for streaming deltas). */
+function addCopyButtons(root: HTMLElement): void {
+  for (const pre of Array.from(root.querySelectorAll('pre'))) {
+    if (pre.querySelector('.copy-btn')) continue;
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.textContent = '⧉';
+    btn.title = 'Copy code';
+    btn.addEventListener('click', () => {
+      const code = (pre.querySelector('code')?.textContent ?? pre.textContent ?? '').trimEnd();
+      void writeClipboard(code).then((ok) => {
+        if (ok) flashCopied(btn, 'Copy code');
+      });
+    });
+    pre.appendChild(btn);
+  }
 }
 
 // ── message construction ───────────────────────────────────────────
@@ -146,7 +210,11 @@ function addUserMessage(text: string, images: string[]): RenderMsg {
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
   if (text.trim()) bubble.textContent = text;
-  wrap.appendChild(bubble);
+  const row = document.createElement('div');
+  row.className = 'bubble-row';
+  row.appendChild(bubble);
+  row.appendChild(makeCopyButton('Copy message', () => text));
+  wrap.appendChild(row);
   messagesEl.appendChild(wrap);
   const msg: RenderMsg = { el: wrap, kind: 'user', tools: new Map() };
   state.messages.push(msg);
@@ -160,8 +228,6 @@ function addAssistantMessage(): RenderMsg {
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
   bubble.innerHTML = '<span class="meta">…</span>';
-  wrap.appendChild(bubble);
-  messagesEl.appendChild(wrap);
   const msg: RenderMsg = {
     el: wrap,
     kind: 'assistant',
@@ -169,6 +235,13 @@ function addAssistantMessage(): RenderMsg {
     content: '',
     tools: new Map(),
   };
+  const row = document.createElement('div');
+  row.className = 'bubble-row';
+  row.appendChild(bubble);
+  // Live content read at click time — safe during streaming deltas.
+  row.appendChild(makeCopyButton('Copy message', () => msg.content ?? ''));
+  wrap.appendChild(row);
+  messagesEl.appendChild(wrap);
   state.messages.push(msg);
   scrollBottom();
   return msg;
@@ -191,9 +264,15 @@ function addToolCard(msg: RenderMsg, toolName: string, preview: string | null, a
   el.innerHTML = `<span class="tname">${escapeHtml(toolName)}</span> <span class="tstatus">… running</span>${
     previewText ? `<pre>${escapeHtml(previewText)}</pre>` : ''
   }`;
-  // Insert tool card above the assistant bubble if present.
-  if (msg.contentEl) {
-    msg.el.insertBefore(el, msg.contentEl);
+  const outPre = el.querySelector('pre');
+  if (outPre) {
+    // Sibling of the pre, not a child — progress updates rewrite pre.textContent.
+    el.appendChild(makeCopyButton('Copy output', () => outPre.textContent ?? '', 'tool-copy'));
+  }
+  // Insert tool card above the message row if present.
+  const anchor = msg.contentEl ? (msg.contentEl.parentElement ?? msg.contentEl) : null;
+  if (anchor) {
+    msg.el.insertBefore(el, anchor);
   } else {
     msg.el.appendChild(el);
   }
@@ -208,7 +287,10 @@ function ensureThinking(msg: RenderMsg): HTMLElement {
   const el = document.createElement('details');
   el.className = 'thinking';
   el.innerHTML = '<summary>thinking…</summary><div class="body"></div>';
-  msg.el.insertBefore(el, msg.contentEl ?? null);
+  const body = el.querySelector('.body') as HTMLElement;
+  el.appendChild(makeCopyButton('Copy thinking', () => body.textContent ?? '', 'thinking-copy'));
+  // Insert above the message row (the bubble sits inside .bubble-row).
+  msg.el.insertBefore(el, msg.contentEl?.parentElement ?? null);
   msg.thinkingEl = el;
   return el;
 }
@@ -389,7 +471,8 @@ function onStreamEvent(ev: StreamEvent): void {
 }
 
 function updateRunUi(): void {
-  sendBtn.disabled = state.streaming;
+  // The send button doubles as Stop while streaming — it must stay clickable,
+  // so it is never disabled here (the click handler routes to stop/send).
   sendBtn.textContent = state.streaming ? '■' : '➤';
   sendBtn.title = state.streaming ? 'Stop' : 'Send';
 }

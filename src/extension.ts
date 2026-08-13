@@ -34,6 +34,8 @@ import { sessionIdFromArg } from './sessionArg';
 import { StatusBar } from './statusbar';
 import { resolveHermesEnv } from './hermesEnv';
 import { buildMessage, resolveImageMode } from './imageTransfer';
+import { messagesToMarkdown } from './exportMarkdown';
+import { enrichImageRefs } from './imageRefs';
 import { ChatViewProvider } from './views/chatProvider';
 import { HistoryProvider } from './views/historyProvider';
 import type { WebviewMessage } from './views/media/protocol';
@@ -111,10 +113,14 @@ class VSHermes {
       vscode.commands.registerCommand('vsh.hermes.checkSync', () => void this.checkSyncCommand()),
       vscode.commands.registerCommand('vsh.hermes.setApiKey', () => void this.setApiKeyFlow()),
       vscode.commands.registerCommand('vsh.hermes.chooseModel', () => void this.chooseModel()),
+      vscode.commands.registerCommand('vsh.hermes.exportSession', () => void this.exportSession()),
+      vscode.commands.registerCommand('vsh.hermes.searchHistory', () => void this.searchHistory()),
+      vscode.commands.registerCommand('vsh.hermes.copyConversation', () => void this.copyConversation()),
     );
 
     this.statusBar.connecting();
     this.log.appendLine(`VSHermes ${this.pluginVersion} activating… baseUrl=${getBaseUrl()}`);
+    this.startHealthPolling();
     void this.connectAndSync();
   }
 
@@ -155,6 +161,117 @@ class VSHermes {
     void this.listSessions();
     if (getCheckSyncOnStartup()) {
       this.view.postInfo(`Connected to Hermes ${this.health.version}. Type /help for commands.`);
+    }
+  }
+
+  // ── gateway health polling ────────────────────────────────────────
+
+  /** Every 30s, check /health and flip connection state on change. */
+  private startHealthPolling(): void {
+    const timer = setInterval(() => void this.pollHealth(), 30_000);
+    this.context.subscriptions.push({ dispose: () => clearInterval(timer) });
+  }
+
+  private async pollHealth(): Promise<void> {
+    if (!this.client) return; // nothing to monitor until first connect
+    const wasOnline = this.health !== null;
+    try {
+      const c = this.client;
+      const h = await c.health();
+      if (!wasOnline) {
+        // Gateway came back — refresh capabilities, sync and the UI.
+        this.health = h;
+        this.caps = await c.capabilities();
+        this.statusBar.connected(h.version, this.caps.model);
+        await this.runSyncCheck(true);
+        void this.listSessions();
+        let model: string | null = this.caps.model ?? null;
+        if (this.sessionId) {
+          const s = await c.getSession(this.sessionId).catch(() => null);
+          if (s?.session.model) model = s.session.model;
+        }
+        this.view.post({
+          type: 'state', connected: true, baseUrl: getBaseUrl(), syncReport: this.syncReport,
+          sessionId: this.sessionId, model, sessions: [], slashCommands: SLASH_COMMANDS,
+          maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension(),
+        });
+        this.view.postInfo('Reconnected to Hermes.');
+      } else {
+        this.health = h;
+      }
+    } catch {
+      if (wasOnline) {
+        this.health = null;
+        this.statusBar.offline('gateway unreachable');
+        this.view.post({
+          type: 'state', connected: false, baseUrl: getBaseUrl(), syncReport: this.syncReport,
+          sessionId: this.sessionId, model: null, sessions: [], slashCommands: SLASH_COMMANDS,
+          maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension(),
+        });
+      }
+    }
+  }
+
+  // ── export ────────────────────────────────────────────────────────
+
+  private async exportSession(): Promise<void> {
+    const sid = this.sessionId;
+    if (!sid) {
+      vscode.window.showWarningMessage('No active session to export — open one from History first.');
+      return;
+    }
+    try {
+      const c = await this.ensureClient();
+      const [msgs, session] = await Promise.all([
+        c.sessionMessages(sid),
+        c.getSession(sid).catch(() => null),
+      ]);
+      const s = session?.session ?? null;
+      const md = messagesToMarkdown(msgs.data, s);
+      const safeTitle =
+        (s?.title ?? `hermes-session-${sid.slice(0, 8)}`).replace(/[\\/:*?"<>|]+/g, '-').trim() ||
+        'hermes-session';
+      const folder = vscode.workspace.workspaceFolders?.[0]?.uri ?? vscode.Uri.file(os.homedir());
+      const uri = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.joinPath(folder, `${safeTitle}.md`),
+        filters: { Markdown: ['md'] },
+      });
+      if (!uri) return; // user cancelled
+      await vscode.workspace.fs.writeFile(uri, Buffer.from(md, 'utf8'));
+      this.view.postInfo(`Session exported to ${uri.fsPath}`);
+    } catch (err) {
+      this.reportError(err);
+    }
+  }
+
+  private async searchHistory(): Promise<void> {
+    const current = this.history.filterActive ? this.history.filter : '';
+    const q = await vscode.window.showInputBox({
+      title: 'Filter History',
+      prompt: 'Match by title, id, model or source. Empty input clears the filter.',
+      value: current,
+    });
+    if (q === undefined) return; // cancelled
+    this.history.setFilter(q);
+  }
+
+  private async copyConversation(): Promise<void> {
+    const sid = this.sessionId;
+    if (!sid) {
+      vscode.window.showWarningMessage('No active session to copy — open one from History first.');
+      return;
+    }
+    try {
+      const c = await this.ensureClient();
+      const [msgs, session] = await Promise.all([
+        c.sessionMessages(sid),
+        c.getSession(sid).catch(() => null),
+      ]);
+      const md = messagesToMarkdown(msgs.data, session?.session ?? null);
+      await vscode.env.clipboard.writeText(md);
+      this.view.postInfo(`Conversation copied to the clipboard (${msgs.data.length} messages).`);
+    } catch (err) {
+      this.reportError(err);
     }
   }
 
@@ -298,7 +415,14 @@ class VSHermes {
         c.sessionMessages(id),
         c.getSession(id).catch(() => null),
       ]);
-      this.view.post({ type: 'messages', sessionId: id, messages: msgs.data });
+      this.view.post({
+        type: 'messages',
+        sessionId: id,
+        messages: msgs.data.map((m) => ({
+          ...m,
+          content: enrichImageRefs(m.content, (p) => this.view.asImageUri(p)),
+        })),
+      });
       this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), syncReport: this.syncReport, sessionId: id, model: session?.session.model ?? null, sessions: [], slashCommands: SLASH_COMMANDS, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
       this.focusChat();
     } catch (err) {
@@ -379,6 +503,11 @@ class VSHermes {
       try {
         await this.stream.done;
       } catch (err) {
+        if ((err as Error).name === 'AbortError') {
+          // Intentional stop (/stop, /new, session switch) — clean end, not an error.
+          this.view.post({ type: 'stream:ended', sessionId: sid });
+          return;
+        }
         this.view.post({ type: 'stream:ended', sessionId: sid, error: (err as Error).message });
         this.reportError(err);
         return;
@@ -432,7 +561,14 @@ class VSHermes {
       if (session) {
         this.view.post({ type: 'session', session: session.session });
       }
-      this.view.post({ type: 'messages', sessionId: sid, messages: msgs.data });
+      this.view.post({
+        type: 'messages',
+        sessionId: sid,
+        messages: msgs.data.map((m) => ({
+          ...m,
+          content: enrichImageRefs(m.content, (p) => this.view.asImageUri(p)),
+        })),
+      });
       void this.listSessions();
     } catch {
       // Non-fatal: the stream already delivered everything.

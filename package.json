@@ -99,6 +99,21 @@
         "command": "vsh.hermes.chooseModel",
         "title": "VSHermes: Switch Model",
         "icon": "$(gear)"
+      },
+      {
+        "command": "vsh.hermes.exportSession",
+        "title": "VSHermes: Export Session as Markdown",
+        "icon": "$(export)"
+      },
+      {
+        "command": "vsh.hermes.copyConversation",
+        "title": "VSHermes: Copy Conversation as Markdown",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "vsh.hermes.searchHistory",
+        "title": "VSHermes: Search History",
+        "icon": "$(search)"
       }
     ],
     "menus": {
@@ -120,6 +135,16 @@
         },
         {
           "command": "vsh.hermes.refreshSessions",
+          "when": "view == vsh.hermes.chat",
+          "group": "navigation"
+        },
+        {
+          "command": "vsh.hermes.exportSession",
+          "when": "view == vsh.hermes.chat",
+          "group": "navigation"
+        },
+        {
+          "command": "vsh.hermes.copyConversation",
           "when": "view == vsh.hermes.chat",
           "group": "navigation"
         }

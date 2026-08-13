@@ -4,6 +4,7 @@
 
 import * as vscode from 'vscode';
 import type { SessionSummary } from '../api/types';
+import { filterSessions } from '../sessionFilter';
 
 /** Friendlier labels for the session source field. */
 const SOURCE_LABELS: Record<string, string> = {
@@ -45,8 +46,22 @@ export class HistoryProvider implements vscode.TreeDataProvider<SessionTreeItem>
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private sessions: SessionSummary[] = [];
+  private filterText = '';
 
   constructor(private readonly loader: () => Promise<SessionSummary[]>) {}
+
+  get filterActive(): boolean {
+    return this.filterText !== '';
+  }
+
+  get filter(): string {
+    return this.filterText;
+  }
+
+  setFilter(filter: string): void {
+    this.filterText = filter.trim();
+    this._onDidChangeTreeData.fire();
+  }
 
   refresh(sessions?: SessionSummary[]): void {
     if (sessions) {
@@ -63,7 +78,8 @@ export class HistoryProvider implements vscode.TreeDataProvider<SessionTreeItem>
   }
 
   getChildren(): SessionTreeItem[] {
-    const sorted = [...this.sessions].sort((a, b) => b.last_active - a.last_active);
+    const filtered = filterSessions(this.sessions, this.filterText);
+    const sorted = [...filtered].sort((a, b) => b.last_active - a.last_active);
     return sorted.map((s) => new SessionTreeItem(s));
   }
 }

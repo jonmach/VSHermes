@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased
+
+- **Chat window resets on session change** — `/new`, `/clear` and deleting
+  the current session now clear the message list (webview rule: a `state`
+  message with a different session id resets the view). Previously the old
+  session's messages stayed on screen under the new session id.
+- **Stop button fixed** — the send button doubles as Stop while streaming
+  (■), but was disabled exactly while streaming, so clicks died; `/stop`
+  still worked. The button is now always clickable and routes to stop.
+- **No more fake stream errors on intentional abort** — Stop, `/new` and
+  session switches mid-stream ended with a "Stream ended with an error:
+  This operation was aborted" toast. `AbortError` is now treated as a clean
+  stop (client-side).
+- **Gateway health polling** — `/health` every 30s: gateway restarts flip
+  the status bar/connection state automatically; reconnect refreshes
+  capabilities, sync state and history. (Also surfaced a Hermes-side bug:
+  a client disconnect mid-SSE-stream crashed the gateway process; fixed in
+  the api_server stream handler by swallowing `ConnectionResetError`.)
+- **Export Session as Markdown** — chat header icon + palette command;
+  writes title, session metadata, messages, thinking (blockquotes) and tool
+  calls to a `.md` file via save dialog.
+- **Copy Conversation as Markdown** — chat header icon + palette command;
+  same serialization, straight to the clipboard.
+- **Copy buttons everywhere** — hover copy on message bubbles, thinking
+  blocks, code blocks and tool outputs (webview-native clipboard with
+  fallback). Code-block/tool-output buttons survive streaming updates.
+- **Search History** — palette command filters the history tree by title,
+  id, model or source (pure, unit-tested filter module).
+- **Image thumbnails in history** — file-mode pasted images render as
+  thumbnails when a session is re-opened or refreshed (stored path
+  references mapped to webview URIs; attachments dir added to webview
+  resource roots).
+- **Publisher → synapticity** — extension id is now `synapticity.vsh-hermes`
+  (marketplace listing + GitHub Release v2.0.0).
+- **Packaging hygiene** — `.github/**` excluded from the vsix; test suite
+  grown to 94 tests (session-switch clearing, stop-while-streaming, copy
+  buttons, export markdown, session filter, image refs).
+
 ## 2.0.0 (2026-08-12)
 
 - **Versioning reset.** The product is one release line, now at 2.0.0.

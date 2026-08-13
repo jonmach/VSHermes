@@ -5,7 +5,9 @@
  */
 
 import * as vscode from 'vscode';
+import * as path from 'node:path';
 import type { HostMessage } from './media/protocol';
+import { resolveHermesEnv } from '../hermesEnv';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
   private view: vscode.WebviewView | undefined;
@@ -17,9 +19,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
     this.view = webviewView;
+    const roots = [vscode.Uri.joinPath(this.extensionUri, 'dist', 'media')];
+    const homeDir = resolveHermesEnv()?.homeDir;
+    if (homeDir) roots.push(vscode.Uri.file(path.join(homeDir, 'attachments')));
     webviewView.webview.options = {
       enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'media')],
+      localResourceRoots: roots,
     };
     webviewView.webview.html = this.renderHtml(webviewView.webview);
     webviewView.webview.onDidReceiveMessage((msg) => this._onDidReceiveMessage.fire(msg));
@@ -30,6 +35,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   post(msg: HostMessage): void {
     void this.view?.webview.postMessage(msg);
+  }
+
+  /** Map an absolute local path to a webview-loadable URI, or null. */
+  asImageUri(filePath: string): string | null {
+    try {
+      return this.view?.webview.asWebviewUri(vscode.Uri.file(filePath)).toString() ?? null;
+    } catch {
+      return null;
+    }
   }
 
   postInfo(text: string): void {
@@ -97,25 +111,37 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     .msg { display: flex; flex-direction: column; gap: 4px; max-width: 100%; }
     .msg.user { align-items: flex-end; }
     .msg.assistant { align-items: flex-start; }
+    .bubble-row { display: flex; align-items: flex-start; gap: 4px; max-width: 100%; }
     .bubble { padding: 8px 10px; border-radius: 8px; max-width: 92%; word-wrap: break-word; white-space: pre-wrap; }
     .msg.user .bubble { background: var(--vsh-user-bubble); border: 1px solid var(--vsh-border); }
     .msg.assistant .bubble { background: transparent; padding-left: 0; }
     .bubble :first-child { margin-top: 0; }
     .bubble :last-child { margin-bottom: 0; }
     .bubble p { margin: 0.4em 0; }
-    .bubble pre { background: var(--vsh-code-bg); padding: 8px; border-radius: 6px; overflow-x: auto; }
+    .bubble pre { background: var(--vsh-code-bg); padding: 8px; border-radius: 6px; overflow-x: auto; position: relative; }
     .bubble code { font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; }
     .bubble pre code { background: none; padding: 0; }
+    .copy-btn { position: absolute; top: 4px; right: 4px; background: var(--vsh-user-bubble); color: var(--vsh-fg); border: 1px solid var(--vsh-border); border-radius: 4px; font-size: 11px; padding: 1px 6px; cursor: pointer; opacity: 0.75; }
+    .copy-btn:hover { opacity: 1; border-color: var(--vsh-accent); }
+    .msg-copy { background: transparent; color: var(--vsh-muted); border: none; border-radius: 4px; font-size: 12px; padding: 2px 6px; cursor: pointer; opacity: 0; transition: opacity 0.15s; align-self: center; flex-shrink: 0; }
+    .msg:hover .msg-copy { opacity: 1; }
+    .msg-copy:hover { color: var(--vsh-fg); background: var(--vsh-user-bubble); }
     .bubble img { max-width: 260px; border-radius: 6px; border: 1px solid var(--vsh-border); display: block; margin: 4px 0; }
     .msg.user .images { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
     .msg.user .images img { max-width: 120px; max-height: 120px; object-fit: cover; border-radius: 6px; border: 1px solid var(--vsh-border); }
-    .tool-card { font-size: 12px; border: 1px solid var(--vsh-border); border-left: 3px solid var(--vsh-accent); border-radius: 6px; padding: 6px 10px; background: var(--vsh-user-bubble); max-width: 92%; }
+    .tool-card { font-size: 12px; border: 1px solid var(--vsh-border); border-left: 3px solid var(--vsh-accent); border-radius: 6px; padding: 6px 10px; background: var(--vsh-user-bubble); max-width: 92%; position: relative; }
     .tool-card .tname { font-weight: 600; }
     .tool-card .tstatus { color: var(--vsh-muted); }
     .tool-card pre { margin: 4px 0 0; font-size: 11px; white-space: pre-wrap; background: var(--vsh-code-bg); padding: 6px; border-radius: 4px; max-height: 160px; overflow-y: auto; }
-    .thinking { font-size: 12px; color: var(--vsh-muted); border-left: 2px solid var(--vsh-border); padding-left: 8px; max-width: 92%; }
+    .tool-copy { position: absolute; top: 2px; right: 2px; background: transparent; color: var(--vsh-muted); border: none; border-radius: 4px; font-size: 12px; padding: 2px 6px; cursor: pointer; opacity: 0; transition: opacity 0.15s; }
+    .tool-card:hover .tool-copy { opacity: 1; }
+    .tool-copy:hover { color: var(--vsh-fg); background: var(--vsh-code-bg); }
+    .thinking { font-size: 12px; color: var(--vsh-muted); border-left: 2px solid var(--vsh-border); padding-left: 8px; max-width: 92%; position: relative; }
     .thinking summary { cursor: pointer; }
     .thinking .body { white-space: pre-wrap; font-style: italic; }
+    .thinking-copy { position: absolute; top: 0; right: 4px; background: transparent; color: var(--vsh-muted); border: none; border-radius: 4px; font-size: 12px; padding: 2px 6px; cursor: pointer; opacity: 0; transition: opacity 0.15s; }
+    .thinking:hover .thinking-copy { opacity: 1; }
+    .thinking-copy:hover { color: var(--vsh-fg); background: var(--vsh-user-bubble); }
     .meta { font-size: 11px; color: var(--vsh-muted); }
     .info-note { font-size: 12px; color: var(--vsh-muted); border: 1px dashed var(--vsh-border); border-radius: 6px; padding: 6px 10px; white-space: pre-wrap; }
     .error-note { font-size: 12px; color: var(--vsh-error); border: 1px solid var(--vsh-error); border-radius: 6px; padding: 6px 10px; white-space: pre-wrap; }

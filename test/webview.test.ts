@@ -244,6 +244,106 @@ describe('webview bundle (dist/media/chat.js)', () => {
     expect(dom.window.document.getElementById('no-session-hint')).not.toBeNull();
   });
 
+  it('send button stays clickable while streaming and clicks post stop', () => {
+    const { dom, sent, post, sendBtn } = bootWebview();
+    post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
+    expect(sendBtn.disabled).toBe(false);
+    expect(sendBtn.textContent).toContain('■');
+    sendBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    expect(sent.some((m) => m.type === 'stop')).toBe(true);
+    expect(sent.some((m) => m.type === 'send')).toBe(false);
+  });
+
+  it('adds hover copy buttons to user and assistant message bubbles', () => {
+    const { dom, post } = bootWebview();
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [
+        { role: 'user', content: 'my question' },
+        { role: 'assistant', content: 'an answer' },
+      ],
+    } as unknown as HostMsg);
+    const msgs = dom.window.document.querySelectorAll('#messages .msg');
+    expect(msgs.length).toBe(2);
+    msgs.forEach((m) => {
+      // Copy button lives beside the bubble in a flex row, not at row level.
+      expect(m.querySelector('.bubble-row')).not.toBeNull();
+      expect(m.querySelector('.bubble-row .msg-copy')).not.toBeNull();
+    });
+    // Clicking must not throw even without a real clipboard (jsdom).
+    const btn = msgs[0].querySelector('.msg-copy') as HTMLButtonElement;
+    btn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  });
+
+  it('adds a copy button to tool card output', () => {
+    const { dom, post } = bootWebview();
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [
+        {
+          role: 'assistant',
+          content: 'done',
+          tool_calls: [{ function: { name: 'patch', arguments: '{"file":"a.txt"}' } }],
+        },
+      ],
+    } as unknown as HostMsg);
+    const card = dom.window.document.querySelector('.tool-card');
+    expect(card).not.toBeNull();
+    expect(card!.querySelector('.tool-copy')).not.toBeNull();
+  });
+
+  it('keeps the tool copy button across streaming progress updates', () => {
+    const { dom, post } = bootWebview();
+    post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'message.started' } } as unknown as HostMsg);
+    post({
+      type: 'stream',
+      event: { type: 'tool.started', tool_name: 'terminal', preview: 'first line' },
+    } as unknown as HostMsg);
+    post({
+      type: 'stream',
+      event: { type: 'tool.progress', tool_name: 'terminal', delta: '\nmore output' },
+    } as unknown as HostMsg);
+    const card = dom.window.document.querySelector('.tool-card');
+    expect(card).not.toBeNull();
+    expect(card!.querySelector('.tool-copy')).not.toBeNull();
+  });
+
+  it('adds a copy button to the thinking block', () => {
+    const { dom, post } = bootWebview();
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [{ role: 'assistant', content: 'answer', reasoning_content: 'hidden chain of thought' }],
+    } as unknown as HostMsg);
+    const t = dom.window.document.querySelector('.thinking');
+    expect(t).not.toBeNull();
+    expect(t!.querySelector('.thinking-copy')).not.toBeNull();
+  });
+
+  it('adds a copy button to rendered code blocks', () => {
+    const { dom, post } = bootWebview();
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [{ role: 'assistant', content: '```js\nconst x = 1;\n```' }],
+    } as unknown as HostMsg);
+    const pre = dom.window.document.querySelector('#messages pre');
+    expect(pre).not.toBeNull();
+    expect(pre!.querySelector('.copy-btn')).not.toBeNull();
+  });
+
+  it('stream:ended without error does not surface an error note', () => {
+    const { dom, post } = bootWebview();
+    post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
+    post({ type: 'stream:ended', sessionId: 's1' } as unknown as HostMsg);
+    const messages = dom.window.document.getElementById('messages')!;
+    expect(messages.textContent.toLowerCase()).not.toContain('error');
+    expect(messages.textContent.toLowerCase()).not.toContain('aborted');
+  });
+
   it('renders the sync banner for an outdated report', () => {
     const { dom, post } = bootWebview();
     post({

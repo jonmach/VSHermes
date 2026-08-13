@@ -17,9 +17,16 @@ model switching.
 - Streaming markdown rendering; thinking shown in a collapsible block; tool
   calls rendered as live cards (`tool.started` / `tool.progress` /
   `tool.completed`)
-- **Stop** (aborts the stream and calls `POST /v1/runs/{id}/stop`)
+- **Stop** — the send button doubles as Stop while streaming (aborts the
+  stream and calls `POST /v1/runs/{id}/stop`); `/stop` works identically.
+  Intentional aborts end cleanly with no spurious error
 - **Approval dialogs** for agent actions that require it
   (`POST /v1/runs/{id}/approval` — deny / once / session / always)
+- **Copy buttons** (hover, one click): every message bubble, thinking block,
+  code block and tool output can be copied — clipboard handled in the
+  webview, no host round-trip
+- `/new`, `/clear` and deleting the current session **reset the chat
+  window** — the view always shows the current session's messages
 
 **Images**
 - Paste or drag-drop into the chat; chips show pending attachments
@@ -29,6 +36,9 @@ model switching.
   (`auto` = inline only when the model advertises vision capability)
 - `vsh.hermes.maxImageBytes` / `vsh.hermes.maxImageDimension` downscale
   oversized pastes before sending
+- Pasted images render as **thumbnails in history** — stored
+  `[Image pasted: …]` path references are mapped to webview-loadable URIs on
+  render (attachments directory registered in the webview resource roots)
 
 **Slash commands** (`/` opens the picker)
 - Working actions (executed client-side against the API):
@@ -48,10 +58,16 @@ model switching.
 - Terminal (CLI) sessions open with full history — one pool of sessions
 
 **Actions & navigation**
-- Chat header icons: New Chat, Check Sync, Switch Model, Refresh History
+- Chat header icons: New Chat, Check Sync, Switch Model, Refresh History,
+  Export as Markdown, Copy Conversation
 - Every action also in the command palette (`VSHermes: …`), incl. Set API Key
+  and **Search History** (filters the history tree by title / id / model /
+  source; empty input clears)
 - Status bar: connected / offline / sync-warning + current model
 - Model switching per session (provider + model pickers, model lock)
+- **Health polling:** `/health` is checked every 30s; gateway restarts flip
+  the connection state automatically, and reconnect refreshes capabilities,
+  sync state and history without user action
 
 **Sync flagging**
 - The plugin ships a pinned manifest (minimum Hermes version, required
@@ -106,6 +122,17 @@ model switching.
   in settings.json).
 - **The webview never holds the API key.** All API traffic runs in the
   extension host.
+- **The chat window shows the current session's messages only.** The webview
+  resets its message list whenever the host's `state` reports a different
+  session id — one rule covering `/new`, `/clear`, delete-current and any
+  future session switch, instead of per-action clear calls.
+- **File-mode images are mapped to webview URIs on render.** The webview
+  sandbox can't read `$HERMES_HOME/attachments/` paths directly, so the host
+  rewrites stored `[Image pasted: …]` references to `asWebviewUri`-mapped
+  markdown images before posting messages.
+- **Copy is webview-native.** Copy buttons use `navigator.clipboard` with an
+  `execCommand` fallback — copying a message, thinking block, code block or
+  tool output never round-trips through the extension host.
 - **Activity-bar icon:** VS Code renders container icons as monochrome
   masks tinted by the theme, so the mark must read at 24px with real
   negative space. Note: the container icon is cached client-side keyed to
