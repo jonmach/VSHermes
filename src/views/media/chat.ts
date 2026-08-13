@@ -675,7 +675,15 @@ function filteredFiles(): FileEntry[] {
 function selectFile(absPath: string): void {
   hideSlashPopup();
   inputEl.value = inputEl.value.slice(0, state.mentionStart) + `@file ${absPath}`;
+  resizeInput();
   inputEl.focus();
+}
+
+/** Keep the textarea height in step with its content (input events only fire
+ *  on typing — programmatic value changes need an explicit call). */
+function resizeInput(): void {
+  inputEl.style.height = 'auto';
+  inputEl.style.height = Math.min(inputEl.scrollHeight, 180) + 'px';
 }
 
 function selectSlash(c: SlashCommandDef): void {
@@ -749,6 +757,7 @@ async function sendNow(textOverride?: string): Promise<void> {
   }
   addUserMessage(text.trim(), state.chips);
   inputEl.value = '';
+  resizeInput();
   state.chips = [];
   renderChips();
   hideSlashPopup();
@@ -904,8 +913,7 @@ inputEl.addEventListener('keydown', (e) => {
 });
 
 inputEl.addEventListener('input', () => {
-  inputEl.style.height = 'auto';
-  inputEl.style.height = Math.min(inputEl.scrollHeight, 180) + 'px';
+  resizeInput();
   updatePopup();
 });
 

@@ -154,7 +154,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     .chip img { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; border: 1px solid var(--vsh-border); }
     .chip .x { position: absolute; top: -6px; right: -6px; background: var(--vsh-error); color: #fff; border: none; border-radius: 50%; width: 16px; height: 16px; font-size: 10px; line-height: 16px; cursor: pointer; text-align: center; }
     #input-row { display: flex; gap: 6px; align-items: flex-end; }
-    #input { flex: 1; resize: none; background: var(--vsh-user-bubble); color: var(--vsh-fg); border: 1px solid var(--vsh-border); border-radius: 6px; padding: 8px; font-family: inherit; font-size: inherit; max-height: 180px; outline: none; }
+    #input { flex: 1; resize: none; background: var(--vsh-user-bubble); color: var(--vsh-fg); border: 1px solid var(--vsh-border); border-radius: 6px; padding: 8px; font-family: inherit; font-size: inherit; max-height: 180px; outline: none; overflow-wrap: anywhere; }
     #input:focus { border-color: var(--vsh-accent); }
     #send-btn { background: var(--vsh-accent); color: #fff; border: none; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-weight: 600; }
     #send-btn:disabled { opacity: 0.5; cursor: default; }
