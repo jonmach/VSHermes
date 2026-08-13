@@ -170,9 +170,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     .slash-item .sname { font-weight: 600; }
     .slash-item .ssum { font-size: 11px; opacity: 0.85; }
     .slash-item .skind { margin-left: auto; font-size: 10px; opacity: 0.6; text-transform: uppercase; }
-    #approval { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.45); z-index: 20; align-items: center; justify-content: center; padding: 20px; }
+    #approval { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 20; align-items: center; justify-content: center; padding: 20px; }
     #approval.show { display: flex; }
-    #approval .box { background: var(--vsh-bg); border: 1px solid var(--vsh-warn); border-radius: 8px; padding: 14px; max-width: 460px; width: 100%; display: flex; flex-direction: column; gap: 10px; }
+    #approval .box { background: var(--vsh-bg); border: 1px solid var(--vsh-warn); border-radius: 8px; padding: 14px; max-width: 460px; width: 100%; max-height: 85vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
     #approval .box h3 { margin: 0; font-size: 13px; }
     #approval .cmd { background: var(--vsh-code-bg); padding: 8px; border-radius: 6px; font-family: var(--vscode-editor-font-family, monospace); font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; }
     #approval .btns { display: flex; gap: 6px; flex-wrap: wrap; }

@@ -7,6 +7,12 @@
 - **BETA status dropped** — the README status banner, the description
   prefix and the marketplace "(BETA build)" note are gone; the extension
   is GA (stable 2.x release line).
+- **Approval dialog pinned to the panel** — the dialog overlay was
+  anchored to the input row (`position: absolute` inside the relative
+  input area), so the box spilled below the panel edge and the
+  Allow/Deny buttons were rendered but unreachable. It now covers the
+  whole panel viewport (`position: fixed`) and the box caps at 85vh with
+  internal scrolling for long command payloads.
 
 ## 2.0.2 (2026-08-13)
 
