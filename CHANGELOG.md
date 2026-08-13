@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.0.2 (2026-08-13)
 
 - **Attach files** — `@file <path>` is now an ATTACH: on send the file is
   copied into `$HERMES_HOME/attachments/` (deterministic

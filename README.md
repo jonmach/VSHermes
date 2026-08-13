@@ -1,6 +1,6 @@
 # VSHermes — Hermes Agent chat for VS Code
 
-> **Status: BETA.** One product, current build 2.0.1 — each build re-verified
+> **Status: BETA.** One product, current build 2.0.2 — each build re-verified
 > against the pinned Hermes API surface. This README describes current
 > functionality, not history (see CHANGELOG.md for the change log).
 
@@ -13,7 +13,9 @@ model switching.
 ## Features
 
 **Chat panel**
-- Multiline input: **Enter** sends, **Shift+Enter** inserts a newline
+- Multiline input: **Enter** sends, **Shift+Enter** inserts a newline; the
+  input auto-grows with its content (long absolute paths wrap instead of
+  scrolling) and resets to one line after send
 - Streaming markdown rendering; thinking shown in a collapsible block; tool
   calls rendered as live cards (`tool.started` / `tool.progress` /
   `tool.completed`)
@@ -88,12 +90,18 @@ model switching.
   (plain text). Pasted images are **sent inline** over HTTP, so image paste
   keeps working with a vision-capable model
 - Switching endpoints resets the current chat session (ids are
-  server-scoped); the abandoned session stays on its server
+  server-scoped); the abandoned session stays on its server. Reconnects
+  are deduped per server (a switch never reuses an in-flight connection to
+  a different server) and the "/help" welcome posts once per activation,
+  not per switch
 
 **Sessions**
 - History tree view grouped **per server**: one collapsible section per
-  endpoint (Local, profile names) with an attach-enabled/disabled badge;
-  cached across reloads
+  server (Local, profile names), keyed by **canonical URL** — two profiles
+  pointing at the same machine collapse into a single section — with an
+  attach-enabled/disabled badge; cached across reloads. A background
+  refresh that outlives an endpoint switch is stored under the server it
+  actually queried, so sessions can never be mis-filed under another server
 - **Opening a session auto-switches to the server it lives on** — you
   continue where you left off, on the right machine; fork/delete do the
   same. An unreachable server surfaces a clear error and the chat stays put
@@ -237,6 +245,7 @@ code --install-extension dist/vsh-hermes-<version>.vsix --force
 ```
 
 Settings: `vsh.hermes.baseUrl` (default `http://127.0.0.1:8642`),
+`vsh.hermes.endpoints`, `vsh.hermes.activeEndpoint`,
 `vsh.hermes.checkSyncOnStartup`, `vsh.hermes.maxImageBytes`,
 `vsh.hermes.maxImageDimension`, `vsh.hermes.imageTransfer`.
 
