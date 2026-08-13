@@ -28,6 +28,12 @@
   (unauthenticated) `/health` probe it calls an authenticated endpoint, so
   a missing or wrong key reports "Reachable, but the API key is missing or
   wrong" instead of a false green "OK".
+- **Saving a key reconnects immediately** — the chat used a connection
+  cached from connect time, so a freshly saved key was never picked up:
+  Test validated it while chat kept 401ing. Saving a key for the active
+  endpoint now rebuilds the connection. Keys are also shared across
+  profiles pointing at the same server URL (one credential, not one per
+  duplicate profile).
 
 ## 2.0.2 (2026-08-13)
 

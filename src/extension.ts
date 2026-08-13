@@ -310,10 +310,21 @@ class VSHermes {
           await setActiveEndpoint(msg.id);
           this.afterEndpointsChanged();
           break;
-        case 'setKey':
+        case 'setKey': {
           if (msg.key.trim()) await setEndpointApiKey(this.context, msg.id, msg.key.trim());
           await this.refreshEndpointsPanel();
+          // A cached client holds the credential from connect time — if the
+          // key just changed for the ACTIVE endpoint, rebuild the connection
+          // so the chat uses the new key immediately (otherwise sends keep
+          // 401ing with the stale credential while Test — which resolves the
+          // key fresh — reports the saved key as valid).
+          if (msg.id === this.currentEndpointId() || (msg.id === LOCAL_ENDPOINT_ID && getActiveEndpoint() === null)) {
+            this.client = null;
+            this.health = null;
+            await this.connectAndSync();
+          }
           break;
+        }
         case 'test':
           await this.testEndpoint(msg.id);
           break;

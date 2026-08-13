@@ -11,7 +11,7 @@
 
 import * as vscode from 'vscode';
 import { resolveHermesEnv } from './hermesEnv';
-import { EndpointProfile, normalizeUrl } from './endpointCore';
+import { canonicalUrl, EndpointProfile, normalizeUrl } from './endpointCore';
 
 const SECRET_KEY = 'vsh.hermes.apiKey';
 
@@ -104,6 +104,15 @@ export async function getApiKey(context: vscode.ExtensionContext): Promise<ApiKe
   if (active) {
     const endpointKey = await getEndpointApiKey(context, active.id);
     if (endpointKey) return { key: endpointKey, source: 'secret' };
+    // Two profiles may point at the same server — they share one credential
+    // even though each has its own SecretStorage slot.
+    const canonical = canonicalUrl(active.url);
+    for (const ep of getEndpoints()) {
+      if (ep.id !== active.id && canonicalUrl(ep.url) === canonical) {
+        const shared = await getEndpointApiKey(context, ep.id);
+        if (shared) return { key: shared, source: 'secret' };
+      }
+    }
   }
   const stored = await context.secrets.get(SECRET_KEY);
   if (stored) return { key: stored, source: 'secret' };
