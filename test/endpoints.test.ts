@@ -64,6 +64,50 @@ describe('endpoints panel bundle (dist/media/endpoints.js)', () => {
     expect(sent.some((m) => m.type === 'ready')).toBe(true);
   });
 
+  it('shows key status per profile (no key → key set)', () => {
+    const { dom, post } = bootPanel();
+    const state = (keySet: string[]) =>
+      ({
+        type: 'state',
+        endpoints: [{ id: 'e1', name: 'Home server', url: 'http://10.0.0.5:8642' }],
+        activeId: null,
+        keySet,
+        remote: true,
+        connected: false,
+        baseUrl: 'http://10.0.0.5:8642',
+        localUrl: 'http://127.0.0.1:8642',
+      }) as unknown as HostMsg;
+    post(state([]));
+    const badge = dom.window.document.querySelector('.key-badge');
+    expect(badge?.textContent).toBe('no key');
+    expect(badge?.classList.contains('set')).toBe(false);
+    // Host refreshes state after Save key → badge flips.
+    post(state(['e1']));
+    expect(dom.window.document.querySelector('.key-badge')?.textContent).toBe('key set');
+    expect(dom.window.document.querySelector('.key-badge')?.classList.contains('set')).toBe(true);
+  });
+
+  it('Save key posts setKey, confirms in the status line, clears the field', () => {
+    const { dom, sent, post } = bootPanel();
+    post({
+      type: 'state',
+      endpoints: [{ id: 'e1', name: 'Home server', url: 'http://10.0.0.5:8642' }],
+      activeId: null,
+      keySet: [],
+      remote: true,
+      connected: false,
+      baseUrl: 'http://10.0.0.5:8642',
+      localUrl: 'http://127.0.0.1:8642',
+    } as unknown as HostMsg);
+    const input = dom.window.document.querySelector('.keyrow input') as HTMLInputElement;
+    input.value = 'sekret-123';
+    const saveBtn = Array.from(dom.window.document.querySelectorAll('button')).find((b) => b.textContent === 'Save key')!;
+    saveBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    expect(sent.some((m) => m.type === 'setKey' && (m as { key?: string }).key === 'sekret-123')).toBe(true);
+    expect(dom.window.document.getElementById('status')?.textContent).toContain('Key saved for Home server');
+    expect(input.value).toBe('');
+  });
+
   it('renders a profile row with a Test button and badges', () => {
     const { dom, post } = bootPanel();
     post({

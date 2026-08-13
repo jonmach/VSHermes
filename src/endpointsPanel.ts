@@ -94,6 +94,8 @@ export class EndpointsPanel {
   .fields input { flex: 1; background: var(--vscode-input-background, #3c3c3c); color: var(--vscode-input-foreground, #ccc); border: 1px solid var(--vsh-border); border-radius: 4px; padding: 4px 6px; }
   .keyrow { display: flex; gap: 6px; margin-bottom: 8px; }
   .keyrow input { flex: 1; background: var(--vscode-input-background, #3c3c3c); color: var(--vscode-input-foreground, #ccc); border: 1px solid var(--vsh-border); border-radius: 4px; padding: 4px 6px; }
+  .key-badge { font-size: 11px; align-self: center; color: var(--vsh-muted); white-space: nowrap; }
+  .key-badge.set { color: var(--vsh-ok); }
   .actions { display: flex; gap: 6px; flex-wrap: wrap; }
   button { background: var(--vscode-button-background, #0e639c); color: var(--vscode-button-foreground, #fff); border: none; border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
   button:hover { background: var(--vscode-button-hoverBackground, #1177bb); }

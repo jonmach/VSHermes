@@ -22,6 +22,12 @@
   the TUI or another window updates in place: new turns and tool cards
   appear without reopening the session. Change-detected (no re-render when
   nothing changed) and scroll-preserving (the reading position stays put).
+- **Endpoints panel key UX** — each profile shows its key status
+  ("key set" / "no key") instead of a silently cleared field; Save key
+  confirms with a note. **Test now validates the key**: after the
+  (unauthenticated) `/health` probe it calls an authenticated endpoint, so
+  a missing or wrong key reports "Reachable, but the API key is missing or
+  wrong" instead of a false green "OK".
 
 ## 2.0.2 (2026-08-13)
 

@@ -186,11 +186,21 @@ function renderRow(ep: EndpointProfile, isLocal = false): HTMLElement {
     const keyBtn = document.createElement('button');
     keyBtn.textContent = 'Save key';
     keyBtn.onclick = () => {
-      if (keyInput.value.trim()) post({ type: 'setKey', id: ep.id, key: keyInput.value.trim() });
+      const value = keyInput.value.trim();
+      if (value) {
+        post({ type: 'setKey', id: ep.id, key: value });
+        statusEl.textContent = `Key saved for ${ep.name}.`;
+        statusEl.classList.add('note');
+      }
       keyInput.value = '';
     };
+    const hasKey = state.keySet.includes(ep.id);
+    const keyBadge = document.createElement('span');
+    keyBadge.className = 'key-badge' + (hasKey ? ' set' : '');
+    keyBadge.textContent = hasKey ? 'key set' : 'no key';
     keyRow.appendChild(keyInput);
     keyRow.appendChild(keyBtn);
+    keyRow.appendChild(keyBadge);
     row.appendChild(keyRow);
   }
 

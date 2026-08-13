@@ -432,15 +432,45 @@ class VSHermes {
         signal: AbortSignal.timeout(5000),
       });
       const body = (await res.json()) as { status?: string; version?: string };
-      const ok = res.ok && body.status === 'ok';
-      this.endpointsPanel.post({
-        type: 'testResult',
-        id,
-        ok,
-        detail: ok
-          ? `OK — Hermes ${body.version ?? '?'} at ${ep.url}`
-          : `HTTP ${res.status} — check the API key and that the gateway exposes api_server`,
+      if (!(res.ok && body.status === 'ok')) {
+        this.endpointsPanel.post({
+          type: 'testResult',
+          id,
+          ok: false,
+          detail: `HTTP ${res.status} — check that the gateway exposes api_server`,
+        });
+        return;
+      }
+      // /health is unauthenticated — reachability alone must not be a green
+      // light. Probe an authenticated route to validate the key (or confirm
+      // the server requires none).
+      const auth = await fetch(`${ep.url}/api/sessions?limit=1`, {
+        headers: key ? { Authorization: `Bearer ${key}` } : {},
+        signal: AbortSignal.timeout(5000),
       });
+      if (auth.ok) {
+        const note = key ? ' (key valid)' : ' (no API key required)';
+        this.endpointsPanel.post({
+          type: 'testResult',
+          id,
+          ok: true,
+          detail: `OK — Hermes ${body.version ?? '?'} at ${ep.url}${note}`,
+        });
+      } else if (auth.status === 401 || auth.status === 403) {
+        this.endpointsPanel.post({
+          type: 'testResult',
+          id,
+          ok: false,
+          detail: `Reachable, but the API key is missing or wrong (HTTP ${auth.status}) — enter it above and Save key`,
+        });
+      } else {
+        this.endpointsPanel.post({
+          type: 'testResult',
+          id,
+          ok: false,
+          detail: `Reachable, but an authenticated probe failed (HTTP ${auth.status})`,
+        });
+      }
     } catch (err) {
       this.endpointsPanel.post({
         type: 'testResult',
