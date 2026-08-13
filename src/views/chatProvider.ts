@@ -204,7 +204,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     <div id="chips"></div>
     <div id="input-row">
       <button id="attach-btn" title="Attach file(s) — copied into the session attachments" aria-label="Attach file(s)"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 6v11.5a4 4 0 0 1-4 4 4 4 0 0 1-4-4V5a2.5 2.5 0 0 1 5 0v10.5a1 1 0 0 1-2 0V6H10v9.5a2.5 2.5 0 0 0 5 0V6a4 4 0 0 0-8 0v11.5a5.5 5.5 0 0 0 11 0V6h-1.5z"/></svg></button>
-      <textarea id="input" rows="1" placeholder="Message Hermes… (drag files to attach)"></textarea>
+      <textarea id="input" rows="1" placeholder="Message Hermes…"></textarea>
       <button id="send-btn">&#10148;</button>
     </div>
   </div>

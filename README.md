@@ -41,11 +41,13 @@ model switching.
   per file, the session owns a durable copy (survives the original moving
   or being deleted), and the LLM decides whether/when to load the content.
   No size limit — zips, PDFs, datasets and binaries all work. Drag & drop
-  notes: dragging from the **Explorer** (or any tree) attaches the file
-  directly; dragging from the **host filesystem (Finder) doesn't reach the
-  container** — VS Code strips local files from webview drops in remote
-  workspaces, so use the paperclip (container file picker) or drag the
-  file into the Explorer first
+  caveat (remote workspaces / macOS): the VS Code client swallows
+  host-filesystem (Finder) drops before they reach the webview — a known
+  upstream limitation (microsoft/vscode#193558, #158150) that applies to
+  every webview extension — so the webview can't even show a warning for
+  them. Use the **paperclip** (container-native file picker) instead, or
+  drop the file into the Explorer first (uploads it into the container),
+  then drag it from there into the chat
 
 **Images**
 - Paste or drag-drop into the chat; chips show pending attachments
