@@ -438,6 +438,17 @@ class VSHermes {
         ? (await getApiKey(this.context)).key
         : (await getEndpointApiKey(this.context, ep.id)) ?? (await getApiKey(this.context)).key;
     try {
+      // Remote endpoints require a key — never report a keyless remote
+      // connection as OK, and never let it pass as "no API key required".
+      if (isRemoteUrl(ep.url) && !key) {
+        this.endpointsPanel.post({
+          type: 'testResult',
+          id,
+          ok: false,
+          detail: 'Remote endpoints require the server\'s API_SERVER_KEY — set it above and Save key',
+        });
+        return;
+      }
       const res = await fetch(`${ep.url}/health`, {
         headers: key ? { Authorization: `Bearer ${key}` } : {},
         signal: AbortSignal.timeout(5000),
@@ -460,7 +471,9 @@ class VSHermes {
         signal: AbortSignal.timeout(5000),
       });
       if (auth.ok) {
-        const note = key ? ' (key valid)' : ' (no API key required)';
+        // Only a loopback (local) server may be keyless; remote is
+        // compulsory, so a remote profile always has a key here.
+        const note = !isRemoteUrl(ep.url) && !key ? ' (no API key required)' : ' (key valid)';
         this.endpointsPanel.post({
           type: 'testResult',
           id,
@@ -750,6 +763,15 @@ class VSHermes {
     const baseUrl = want;
     const { key, source } = await getApiKey(this.context);
     if (!key) {
+      // Remote endpoints must present the server's API_SERVER_KEY — a
+      // keyless remote connection is refused outright (a keyless remote
+      // server would be open to anyone who can reach it).
+      if (isRemoteUrl(baseUrl)) {
+        throw new Error(
+          'Remote endpoints require the server\'s API_SERVER_KEY — set it in the Endpoints panel (Save key). ' +
+            'Keyless remote connections are not allowed.',
+        );
+      }
       const prompted = await promptForApiKey(this.context);
       if (!prompted) {
         throw new Error(

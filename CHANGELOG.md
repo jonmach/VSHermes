@@ -34,6 +34,10 @@
   endpoint now rebuilds the connection. Keys are also shared across
   profiles pointing at the same server URL (one credential, not one per
   duplicate profile).
+- **Remote connections require a key** — a non-loopback endpoint without
+  an API key is refused at connect with a clear message; the panel badge
+  shows `key required`, and Test reports the missing key instead of a
+  false "OK". Keyless connections are only possible to loopback servers.
 
 ## 2.0.2 (2026-08-13)
 

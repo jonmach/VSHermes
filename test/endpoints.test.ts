@@ -64,7 +64,7 @@ describe('endpoints panel bundle (dist/media/endpoints.js)', () => {
     expect(sent.some((m) => m.type === 'ready')).toBe(true);
   });
 
-  it('shows key status per profile (no key → key ✓)', () => {
+  it('shows key status per profile (remote: no key → key required → key ✓)', () => {
     const { dom, post } = bootPanel();
     const state = (keySet: string[]) =>
       ({
@@ -78,11 +78,30 @@ describe('endpoints panel bundle (dist/media/endpoints.js)', () => {
         localUrl: 'http://127.0.0.1:8642',
       }) as unknown as HostMsg;
     post(state([]));
+    // Remote profile without a key: the badge demands one (compulsory).
     const badge = dom.window.document.querySelector('.badge.key-badge');
-    expect(badge?.textContent).toBe('no key');
+    expect(badge?.textContent).toBe('key required');
     // Host refreshes state after Save key → badge flips.
     post(state(['e1']));
     expect(dom.window.document.querySelector('.badge.key-badge')?.textContent).toBe('key ✓');
+  });
+
+  it('local profile without a key shows "no key" (not compulsory)', () => {
+    const { dom, post } = bootPanel();
+    post({
+      type: 'state',
+      endpoints: [{ id: 'e1', name: 'Local box', url: 'http://127.0.0.1:8642' }],
+      activeId: null,
+      keySet: [],
+      remote: false,
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      localUrl: 'http://127.0.0.1:8642',
+    } as unknown as HostMsg);
+    const badges = Array.from(dom.window.document.querySelectorAll('.badge.key-badge')).map((b) => b.textContent);
+    // The built-in Local row shows 'legacy key'; a loopback profile shows 'no key'.
+    expect(badges).toContain('no key');
+    expect(badges).not.toContain('key required');
   });
 
   it('Save key posts setKey, confirms in the status line, clears the field', () => {

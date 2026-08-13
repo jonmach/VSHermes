@@ -155,7 +155,13 @@ function renderRow(ep: EndpointProfile, isLocal = false): HTMLElement {
   badges.appendChild(remoteBadge);
   const keyBadge = document.createElement('span');
   keyBadge.className = 'badge key-badge ' + (state.keySet.includes(ep.id) ? 'ok' : 'warn');
-  keyBadge.textContent = state.keySet.includes(ep.id) ? 'key ✓' : 'no key';
+  // Remote endpoints must present a key — a keyless remote profile is
+  // refused at connect, so the badge says so loudly.
+  keyBadge.textContent = state.keySet.includes(ep.id)
+    ? 'key ✓'
+    : isRemote(ep.url)
+      ? 'key required'
+      : 'no key';
   badges.appendChild(keyBadge);
   head.appendChild(title);
   head.appendChild(badges);

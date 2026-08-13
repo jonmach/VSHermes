@@ -81,9 +81,19 @@ model switching.
   Activate to return to it; it has none of the remote constraints
 - Named endpoint profiles (name + URL), each with its own API key stored in
   VS Code **SecretStorage** (never settings.json) — e.g. your local
-  container and a Hermes API server on another machine
-- **Test** probes `/health` per profile without switching; Activate switches
-  and reconnects. With no profiles configured, behaviour is unchanged
+  container and a Hermes API server on another machine. **A profile's key
+  is the `API_SERVER_KEY` from *that server's* Hermes `.env`** — the
+  gateway's bearer credential. It is unrelated to model/provider keys
+  (DeepSeek, OpenAI, …), which Hermes holds in its own config
+- **Remote endpoints require a key** — a non-loopback profile without an
+  API key is refused at connect ("Remote endpoints require the server's
+  API_SERVER_KEY — set it in the Endpoints panel (Save key)") and the
+  panel badge shows `key required`. Keyless connections are only possible
+  to loopback (local) servers
+- **Test** probes reachability *and* validates the key (an authenticated
+  probe after `/health`), so a missing or wrong key is reported explicitly
+  instead of a false "OK"; Activate switches and reconnects. With no
+  profiles configured, behaviour is unchanged
 - **Remote endpoints** (any non-loopback host) disable file attach — the
   gateway can't receive files, so `@file`, the paperclip and drag & drop
   are hard-restricted with clear messages; `@path` references stay allowed
@@ -223,7 +233,10 @@ Extensions → Install from VSIX.
 search "VSHermes" in the Extensions view.
 
 First launch: the API key is auto-discovered from the Hermes `.env` (see
-Requirements); only prompted for if none is found anywhere.
+Requirements); only prompted for if none is found anywhere. **Clients
+connecting to a remote server need that server's `API_SERVER_KEY` value —
+the same string from its `.env` — stored for the profile (Endpoints →
+Save key); remote connections without a key are refused.**
 
 ## Build & install from source (development)
 
