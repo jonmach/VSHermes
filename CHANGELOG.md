@@ -8,6 +8,12 @@
   inlining — Hermes reads the file itself via its own tools when it needs
   it. (Earlier draft inlined file contents; dropped by design to keep the
   prompt lean and let sub-agents read on demand.)
+- **Input auto-grows to fit its content** — picking a file inserts a long
+  absolute path; the textarea now grows so the full path is visible (long
+  paths wrap instead of scrolling) and shrinks back to one line after
+  send. Previously the auto-grow only ran while typing, so programmatic
+  changes (file picker insert, clear after send) left the input at the
+  wrong height and clipped the content.
 
 - **Chat window resets on session change** — `/new`, `/clear` and deleting
   the current session now clear the message list (webview rule: a `state`
