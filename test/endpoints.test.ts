@@ -1,0 +1,158 @@
+/**
+ * Endpoints panel smoke test — runs the SHIPPED bundle
+ * (dist/media/endpoints.js) inside jsdom with a stub acquireVsCodeApi,
+ * replicating the EndpointsPanel markup. Proves the panel boots, renders
+ * profiles (incl. the Test button) and posts add/setKey/remove messages.
+ */
+
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { JSDOM } from 'jsdom';
+import { describe, expect, it } from 'vitest';
+
+const BUNDLE = join(__dirname, '..', 'dist', 'media', 'endpoints.js');
+
+const PANEL_HTML = `<!DOCTYPE html><html><body>
+  <div id="status"></div>
+  <div id="endpoint-list"></div>
+  <div class="add">
+    <input id="new-name">
+    <input id="new-url">
+    <button id="add-btn">Add</button>
+  </div>
+</body></html>`;
+
+interface HostMsg {
+  type: string;
+  [k: string]: unknown;
+}
+
+function bootPanel(): { dom: JSDOM; sent: HostMsg[]; post: (m: HostMsg) => void } {
+  const sent: HostMsg[] = [];
+  const dom = new JSDOM(PANEL_HTML, {
+    runScripts: 'dangerously',
+    url: 'https://vscode-webview.test',
+    beforeParse(window) {
+      (window as unknown as { acquireVsCodeApi: () => unknown }).acquireVsCodeApi = () => ({
+        postMessage: (m: HostMsg) => sent.push(m),
+        getState: () => undefined,
+        setState: () => undefined,
+      });
+    },
+  });
+  const script = dom.window.document.createElement('script');
+  script.textContent = readFileSync(BUNDLE, 'utf8');
+  dom.window.document.body.appendChild(script);
+  return {
+    dom,
+    sent,
+    post: (m) => dom.window.dispatchEvent(new dom.window.MessageEvent('message', { data: m })),
+  };
+}
+
+describe('endpoints panel bundle (dist/media/endpoints.js)', () => {
+  it('boots and posts ready', () => {
+    const { sent } = bootPanel();
+    expect(sent.some((m) => m.type === 'ready')).toBe(true);
+  });
+
+  it('renders a profile row with a Test button and badges', () => {
+    const { dom, post } = bootPanel();
+    post({
+      type: 'state',
+      endpoints: [{ id: 'e1', name: 'Home server', url: 'http://10.0.0.5:8642' }],
+      activeId: null,
+      keySet: [],
+      remote: true,
+      connected: false,
+      baseUrl: 'http://10.0.0.5:8642',
+    } as unknown as HostMsg);
+    const rows = dom.window.document.querySelectorAll('.endpoint');
+    expect(rows.length).toBe(1);
+    const row = rows[0];
+    expect(row.textContent).toContain('Home server');
+    expect(row.textContent).toContain('remote');
+    expect(Array.from(row.querySelectorAll('button')).some((b) => b.textContent === 'Test')).toBe(true);
+    expect(Array.from(row.querySelectorAll('button')).some((b) => b.textContent === 'Activate')).toBe(true);
+  });
+
+  it('marks the active profile and hides its Activate button', () => {
+    const { dom, post } = bootPanel();
+    post({
+      type: 'state',
+      endpoints: [
+        { id: 'e1', name: 'Local', url: 'http://127.0.0.1:8642' },
+        { id: 'e2', name: 'Home server', url: 'http://10.0.0.5:8642' },
+      ],
+      activeId: 'e1',
+      keySet: [],
+      remote: false,
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+    } as unknown as HostMsg);
+    const rows = dom.window.document.querySelectorAll('.endpoint');
+    expect(rows.length).toBe(2);
+    expect(rows[0].classList.contains('active')).toBe(true);
+    expect(rows[0].textContent).toContain('active');
+    expect(Array.from(rows[0].querySelectorAll('button')).some((b) => b.textContent === 'Activate')).toBe(false);
+    expect(Array.from(rows[1].querySelectorAll('button')).some((b) => b.textContent === 'Activate')).toBe(true);
+  });
+
+  it('Add posts an add message with trimmed name/url and clears the form', () => {
+    const { dom, sent } = bootPanel();
+    const name = dom.window.document.getElementById('new-name') as HTMLInputElement;
+    const url = dom.window.document.getElementById('new-url') as HTMLInputElement;
+    name.value = '  Home server  ';
+    url.value = '  http://10.0.0.5:8642  ';
+    (dom.window.document.getElementById('add-btn') as HTMLButtonElement).click();
+    const add = sent.find((m) => m.type === 'add');
+    expect(add).toBeDefined();
+    expect((add as unknown as { name: string }).name).toBe('Home server');
+    expect((add as unknown as { url: string }).url).toBe('http://10.0.0.5:8642');
+    expect(name.value).toBe('');
+    expect(url.value).toBe('');
+  });
+
+  it('Add with only a URL defaults the name to the host', () => {
+    const { dom, sent } = bootPanel();
+    const url = dom.window.document.getElementById('new-url') as HTMLInputElement;
+    url.value = 'http://10.0.0.5:8642';
+    (dom.window.document.getElementById('add-btn') as HTMLButtonElement).click();
+    const add = sent.find((m) => m.type === 'add');
+    expect((add as unknown as { name: string }).name).toBe('10.0.0.5');
+  });
+
+  it('Add with an empty URL shows a visible note and posts nothing', () => {
+    const { dom, sent } = bootPanel();
+    const name = dom.window.document.getElementById('new-name') as HTMLInputElement;
+    name.value = 'Home server';
+    (dom.window.document.getElementById('add-btn') as HTMLButtonElement).click();
+    expect(sent.some((m) => m.type === 'add')).toBe(false);
+    const status = dom.window.document.getElementById('status')!;
+    expect(status.textContent).toContain('URL is required');
+    expect(status.classList.contains('note')).toBe(true);
+  });
+
+  it('renders host notes in the status line', () => {
+    const { dom, post } = bootPanel();
+    post({ type: 'note', text: 'Invalid URL "nope" — include http:// or https://' } as unknown as HostMsg);
+    const status = dom.window.document.getElementById('status')!;
+    expect(status.textContent).toContain('Invalid URL');
+  });
+
+  it('renders test results under the profile', () => {
+    const { dom, post } = bootPanel();
+    post({
+      type: 'state',
+      endpoints: [{ id: 'e1', name: 'Home server', url: 'http://10.0.0.5:8642' }],
+      activeId: null,
+      keySet: [],
+      remote: true,
+      connected: false,
+      baseUrl: 'http://10.0.0.5:8642',
+    } as unknown as HostMsg);
+    post({ type: 'testResult', id: 'e1', ok: false, detail: 'Unreachable: ECONNREFUSED' } as unknown as HostMsg);
+    const row = dom.window.document.querySelector('.endpoint')!;
+    expect(row.querySelector('.test-result')?.textContent).toContain('ECONNREFUSED');
+  });
+});

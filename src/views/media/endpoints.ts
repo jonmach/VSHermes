@@ -72,6 +72,9 @@ function onHostMessage(msg: EndpointsHostMessage): void {
   } else if (msg.type === 'testResult') {
     state.testResults.set(msg.id, { ok: msg.ok, detail: msg.detail });
     render();
+  } else if (msg.type === 'note') {
+    statusEl.textContent = msg.text;
+    statusEl.classList.add('note');
   }
 }
 
@@ -205,11 +208,26 @@ window.addEventListener('message', (e: MessageEvent<EndpointsHostMessage>) => {
 });
 
 addBtn.addEventListener('click', () => {
-  if (newName.value.trim() && newUrl.value.trim()) {
-    post({ type: 'add', name: newName.value.trim(), url: newUrl.value.trim() });
-    newName.value = '';
-    newUrl.value = '';
+  const name = newName.value.trim();
+  const url = newUrl.value.trim();
+  if (!url) {
+    statusEl.textContent = 'URL is required — e.g. http://192.168.1.20:8642';
+    statusEl.classList.add('note');
+    newUrl.focus();
+    return;
   }
+  // Name is optional: default to the URL's host.
+  let label = name;
+  if (!label) {
+    try {
+      label = new URL(url.includes('://') ? url : `http://${url}`).hostname;
+    } catch {
+      label = url;
+    }
+  }
+  post({ type: 'add', name: label, url });
+  newName.value = '';
+  newUrl.value = '';
 });
 
 post({ type: 'ready' });

@@ -80,7 +80,8 @@ export type EndpointsHostMessage =
       connected: boolean;
       baseUrl: string;
     }
-  | { type: 'testResult'; id: string; ok: boolean; detail: string };
+  | { type: 'testResult'; id: string; ok: boolean; detail: string }
+  | { type: 'note'; text: string };
 
 export type EndpointsWebviewMessage =
   | { type: 'ready' }

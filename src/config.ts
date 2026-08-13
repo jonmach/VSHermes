@@ -33,14 +33,14 @@ export function getActiveEndpoint(): EndpointProfile | undefined {
   return getEndpoints().find((e) => e.id === id);
 }
 
-export function saveEndpoints(endpoints: EndpointProfile[]): void {
-  void vscode.workspace
+export async function saveEndpoints(endpoints: EndpointProfile[]): Promise<void> {
+  await vscode.workspace
     .getConfiguration('vsh.hermes')
     .update('endpoints', endpoints, vscode.ConfigurationTarget.Global);
 }
 
-export function setActiveEndpoint(id: string | null): void {
-  void vscode.workspace
+export async function setActiveEndpoint(id: string | null): Promise<void> {
+  await vscode.workspace
     .getConfiguration('vsh.hermes')
     .update('activeEndpoint', id, vscode.ConfigurationTarget.Global);
 }

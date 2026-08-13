@@ -206,45 +206,72 @@ class VSHermes {
   // ── endpoints panel ──────────────────────────────────────────────
 
   private async handleEndpointMessage(msg: EndpointsWebviewMessage): Promise<void> {
-    switch (msg.type) {
-      case 'ready':
-        await this.refreshEndpointsPanel();
-        break;
-      case 'add': {
-        const url = normalizeUrl(msg.url);
-        if (!url) break;
-        const endpoints = getEndpoints();
-        endpoints.push({ id: makeEndpointId(msg.name), name: msg.name.trim(), url });
-        saveEndpoints(endpoints);
-        this.afterEndpointsChanged();
-        break;
+    try {
+      switch (msg.type) {
+        case 'ready':
+          await this.refreshEndpointsPanel();
+          break;
+        case 'add': {
+          const url = normalizeUrl(msg.url);
+          if (!url) {
+            this.endpointsPanel.post({
+              type: 'note',
+              text: `Invalid URL "${msg.url}" — include http:// or https://`,
+            });
+            break;
+          }
+          const endpoints = getEndpoints();
+          endpoints.push({ id: makeEndpointId(msg.name), name: msg.name.trim(), url });
+          try {
+            await saveEndpoints(endpoints);
+          } catch (err) {
+            this.endpointsPanel.post({ type: 'note', text: `Could not save endpoint: ${(err as Error).message}` });
+            break;
+          }
+          this.afterEndpointsChanged();
+          break;
+        }
+        case 'update': {
+          const url = normalizeUrl(msg.url);
+          if (!url) {
+            this.endpointsPanel.post({ type: 'note', text: `Invalid URL "${msg.url}" — include http:// or https://` });
+            break;
+          }
+          try {
+            await saveEndpoints(
+              getEndpoints().map((e) => (e.id === msg.id ? { ...e, name: msg.name.trim(), url } : e)),
+            );
+          } catch (err) {
+            this.endpointsPanel.post({ type: 'note', text: `Could not save endpoint: ${(err as Error).message}` });
+            break;
+          }
+          this.afterEndpointsChanged();
+          break;
+        }
+        case 'remove': {
+          await saveEndpoints(getEndpoints().filter((e) => e.id !== msg.id));
+          if (getActiveEndpoint()?.id === msg.id) setActiveEndpoint(null);
+          this.afterEndpointsChanged();
+          break;
+        }
+        case 'setActive':
+          await setActiveEndpoint(msg.id);
+          this.afterEndpointsChanged();
+          break;
+        case 'setKey':
+          if (msg.key.trim()) await setEndpointApiKey(this.context, msg.id, msg.key.trim());
+          await this.refreshEndpointsPanel();
+          break;
+        case 'test':
+          await this.testEndpoint(msg.id);
+          break;
       }
-      case 'update': {
-        const url = normalizeUrl(msg.url);
-        if (!url) break;
-        saveEndpoints(
-          getEndpoints().map((e) => (e.id === msg.id ? { ...e, name: msg.name.trim(), url } : e)),
-        );
-        this.afterEndpointsChanged();
-        break;
-      }
-      case 'remove': {
-        saveEndpoints(getEndpoints().filter((e) => e.id !== msg.id));
-        if (getActiveEndpoint()?.id === msg.id) setActiveEndpoint(null);
-        this.afterEndpointsChanged();
-        break;
-      }
-      case 'setActive':
-        setActiveEndpoint(msg.id);
-        this.afterEndpointsChanged();
-        break;
-      case 'setKey':
-        if (msg.key.trim()) await setEndpointApiKey(this.context, msg.id, msg.key.trim());
-        await this.refreshEndpointsPanel();
-        break;
-      case 'test':
-        await this.testEndpoint(msg.id);
-        break;
+    } catch (err) {
+      this.logInfo(`endpoint message failed: ${(err as Error).message}`);
+      this.endpointsPanel.post({
+        type: 'note',
+        text: `Endpoint action failed: ${(err as Error).message}`,
+      });
     }
   }
 

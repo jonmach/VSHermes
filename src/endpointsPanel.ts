@@ -55,9 +55,16 @@ export class EndpointsPanel {
   private renderHtml(webview: vscode.Webview): string {
     const nonce = getNonce();
     const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'dist', 'media', 'endpoints.js'));
+    // CSP mirrors the chat webview — cspSource in script-src is required
+    // for the external (webview-origin) script to load in this VS Code.
+    const csp = [
+      `default-src 'none'`,
+      `script-src 'nonce-${nonce}' ${webview.cspSource}`,
+      `style-src 'unsafe-inline'`,
+    ].join('; ');
     return `<!DOCTYPE html><html><head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="${csp}">
 <style>
   :root {
     --vsh-bg: var(--vscode-sideBar-background, #1e1e1e);
@@ -71,6 +78,7 @@ export class EndpointsPanel {
   }
   body { font-family: var(--vscode-font-family); font-size: 13px; color: var(--vsh-fg); background: var(--vsh-bg); margin: 0; padding: 12px; }
   #status { font-size: 12px; color: var(--vsh-muted); margin-bottom: 12px; }
+  #status.note { color: var(--vsh-warn); }
   .empty { color: var(--vsh-muted); padding: 8px 0; }
   .endpoint { border: 1px solid var(--vsh-border); border-radius: 6px; padding: 10px; margin-bottom: 10px; }
   .endpoint.active { border-color: var(--vsh-accent); }
