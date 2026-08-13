@@ -1,6 +1,6 @@
 # VSHermes — Hermes Agent chat for VS Code
 
-> **Status: BETA.** One product, current build 2.0.0 — each build re-verified
+> **Status: BETA.** One product, current build 2.0.1 — each build re-verified
 > against the pinned Hermes API surface. This README describes current
 > functionality, not history (see CHANGELOG.md for the change log).
 
@@ -27,11 +27,20 @@ model switching.
   webview, no host round-trip
 - `/new`, `/clear` and deleting the current session **reset the chat
   window** — the view always shows the current session's messages
-- **`@file` mentions** — type `@` anywhere in the message and a workspace
-  file picker opens (`@CHAN` lists every file whose path contains "CHAN",
-  live as you type); selecting one inserts `@file <absolute path>`. The
-  mention stays a filename reference — Hermes reads the content itself via
-  its own tools when it needs it, so the prompt stays lean
+- **`@` file references** — type `@` anywhere in the message and a
+  workspace file picker opens (`@CHAN` lists every file whose path contains
+  "CHAN", live as you type); selecting one inserts `@<absolute path>` — a
+  plain reference (files or folders), never copied. A **Browse…** entry at
+  the bottom of the picker opens the OS dialog for anything outside the
+  workspace. Hermes reads the content itself via its own tools when it
+  needs it, so the prompt stays lean
+- **Attach files** (`@file <path>`, paperclip button, or drag & drop
+  anywhere on the panel) — the file is **copied into
+  `$HERMES_HOME/attachments/`** (deterministic name, no duplicates on
+  re-send) and sent as `@file <copy path>`: the message stays a small path
+  per file, the session owns a durable copy (survives the original moving
+  or being deleted), and the LLM decides whether/when to load the content.
+  No size limit — zips, PDFs, datasets and binaries all work
 
 **Images**
 - Paste or drag-drop into the chat; chips show pending attachments
@@ -117,6 +126,14 @@ model switching.
   `image_url` parts with a 400; saving to `$HERMES_HOME/attachments/` and
   referencing the path lets Hermes' vision fallback chain do the analysis,
   and the image persists on disk.
+- **Attach = copy + reference, never inline.** `@<path>` is a plain
+  reference (the LLM reads the file or folder in place when it wants);
+  `@file <path>` — from the picker's attach form, the paperclip button,
+  drag & drop, or typed — copies the file into `$HERMES_HOME/attachments/`
+  (deterministic `name__<hash>.ext`, so re-sends never duplicate) and the
+  token points at the copy. The message stays a path per file, the session
+  owns a durable copy, and the LLM decides when to load the content — so
+  there are no size limits and no prompt bloat. Content is never inlined.
 - **Sync manifest instead of silent drift.** The plugin pins the API surface
   it was built against and diffs the live server's self-description against
   it, so a Hermes upgrade can't break the plugin unnoticed.

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Attach files** — `@file <path>` is now an ATTACH: on send the file is
+  copied into `$HERMES_HOME/attachments/` (deterministic
+  `name__<hash>.ext` — re-sends never duplicate) and the token is rewritten
+  to point at the copy. The message stays a path per file and the LLM
+  decides when to load the content; no size limits. Entry points: paperclip
+  button in the input row, drag & drop anywhere on the panel, the palette
+  command, or the `@file ` picker form. Plain `@<path>` (picker or
+  Browse…) stays a reference — never copied, works for folders too.
+
 ## 2.0.1 (2026-08-13)
 
 - **`@file` mentions** — `@` anywhere in the message opens a workspace file

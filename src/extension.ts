@@ -34,6 +34,7 @@ import { sessionIdFromArg } from './sessionArg';
 import { StatusBar } from './statusbar';
 import { resolveHermesEnv } from './hermesEnv';
 import { buildMessage, resolveImageMode } from './imageTransfer';
+import { expandFileTokens } from './attach';
 import { messagesToMarkdown } from './exportMarkdown';
 import { enrichImageRefs } from './imageRefs';
 import { ChatViewProvider } from './views/chatProvider';
@@ -116,6 +117,7 @@ class VSHermes {
       vscode.commands.registerCommand('vsh.hermes.exportSession', () => void this.exportSession()),
       vscode.commands.registerCommand('vsh.hermes.searchHistory', () => void this.searchHistory()),
       vscode.commands.registerCommand('vsh.hermes.copyConversation', () => void this.copyConversation()),
+      vscode.commands.registerCommand('vsh.hermes.attachFiles', () => void this.attachFiles()),
     );
 
     this.statusBar.connecting();
@@ -306,6 +308,42 @@ class VSHermes {
       this.view.post({ type: 'fileResults', query, files });
     } catch {
       this.view.post({ type: 'fileResults', query, files: [] });
+    }
+  }
+
+  /** Paperclip / palette: pick file(s) anywhere → insert `@file <path>` attach
+   *  tokens. The copy into attachments happens at send time. */
+  private async attachFiles(): Promise<void> {
+    try {
+      const picked = await vscode.window.showOpenDialog({
+        canSelectFiles: true,
+        canSelectFolders: false,
+        canSelectMany: true,
+        openLabel: 'Attach',
+        title: 'VSHermes — attach file(s)',
+      });
+      if (!picked || picked.length === 0) return;
+      this.view.post({ type: 'insertTokens', tokens: picked.map((u) => `@file ${u.fsPath}`) });
+    } catch (err) {
+      this.reportError(err);
+    }
+  }
+
+  /** `@` picker "Browse…": pick a file or folder → insert a plain `@<path>`
+   *  reference (never copied — the LLM reads it in place). */
+  private async browseReference(): Promise<void> {
+    try {
+      const picked = await vscode.window.showOpenDialog({
+        canSelectFiles: true,
+        canSelectFolders: true,
+        canSelectMany: false,
+        openLabel: 'Reference',
+        title: 'VSHermes — reference a file or folder',
+      });
+      this.view.post({ type: 'browseResult', path: picked?.[0]?.fsPath ?? null });
+    } catch (err) {
+      this.view.post({ type: 'browseResult', path: null });
+      this.reportError(err);
     }
   }
 
@@ -522,6 +560,30 @@ class VSHermes {
       }
     } catch (err) {
       this.logInfo(`image transfer planning failed, sending as-is: ${(err as Error).message}`);
+    }
+    // @file attach expansion: copy mentioned files into attachments and
+    // point the token at the copy — the message stays a small path per file
+    // and the LLM loads the content when it decides to.
+    try {
+      const home = resolveHermesEnv()?.homeDir ?? os.tmpdir();
+      const attachDir = path.join(home, 'attachments');
+      const copied: string[] = [];
+      const missing: string[] = [];
+      parts = parts.map((p) => {
+        if (p.type !== 'text') return p;
+        const r = expandFileTokens(p.text, attachDir);
+        copied.push(...r.copied);
+        missing.push(...r.missing);
+        return { ...p, text: r.text };
+      });
+      if (copied.length > 0) this.logInfo(`@file attach → ${copied.join(', ')}`);
+      if (missing.length > 0) {
+        void vscode.window.showWarningMessage(
+          `VSHermes: ${missing.length} attached file(s) not found — sent as a path reference:\n${missing.join('\n')}`,
+        );
+      }
+    } catch (err) {
+      this.logInfo(`@file expansion failed, sending as-is: ${(err as Error).message}`);
     }
     let sid = this.sessionId;
     try {
@@ -743,6 +805,12 @@ class VSHermes {
         break;
       case 'fileQuery':
         void this.handleFileQuery(msg.query);
+        break;
+      case 'attachDialog':
+        await this.attachFiles();
+        break;
+      case 'browse':
+        await this.browseReference();
         break;
       case 'focusHistory':
         this.focusHistory();

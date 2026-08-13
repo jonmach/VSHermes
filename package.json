@@ -111,6 +111,11 @@
         "icon": "$(copy)"
       },
       {
+        "command": "vsh.hermes.attachFiles",
+        "title": "VSHermes: Attach File(s)…",
+        "icon": "$(paperclip)"
+      },
+      {
         "command": "vsh.hermes.searchHistory",
         "title": "VSHermes: Search History",
         "icon": "$(search)"

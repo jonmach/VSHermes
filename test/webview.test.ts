@@ -29,6 +29,7 @@ const WEBVIEW_HTML = `<!DOCTYPE html><html><body>
     </div>
     <div id="chips"></div>
     <textarea id="input"></textarea>
+    <button id="attach-btn"></button>
     <button id="send-btn"></button>
   </div>
 </body></html>`;
@@ -311,7 +312,7 @@ describe('webview bundle (dist/media/chat.js)', () => {
     expect(card!.querySelector('.tool-copy')).not.toBeNull();
   });
 
-  it('@ opens the file picker and inserts @file on selection', async () => {
+  it('@ opens the file picker and inserts a plain reference on selection', async () => {
     const { dom, sent, post, input } = bootWebview();
     input.value = '@';
     input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
@@ -330,12 +331,32 @@ describe('webview bundle (dist/media/chat.js)', () => {
       ],
     } as unknown as HostMsg);
     const items = dom.window.document.querySelectorAll('#slash-popup .slash-item');
-    expect(items.length).toBe(2);
+    expect(items.length).toBe(3); // 2 files + Browse… row
     expect(items[0].textContent).toContain('src/foo.ts');
+    expect(items[0].textContent).toContain('@src/foo.ts'); // reference form label
+    expect(items[2].textContent).toContain('Browse');
     // Enter selects the highlighted file (absolute path) and closes the popup.
     input.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
-    expect(input.value).toBe('@file /ws/src/foo.ts');
+    expect(input.value).toBe('@/ws/src/foo.ts');
     expect(dom.window.document.getElementById('slash-popup')!.classList.contains('show')).toBe(false);
+  });
+
+  it('@file prefix selects the attach form (inserts @file <abs>)', async () => {
+    const { dom, sent, post, input } = bootWebview();
+    input.value = '@file ';
+    input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    expect(dom.window.document.getElementById('slash-popup')!.classList.contains('show')).toBe(true);
+    await new Promise((r) => setTimeout(r, 300));
+    post({
+      type: 'fileResults',
+      query: '',
+      files: [{ rel: 'data/report.pdf', abs: '/ws/data/report.pdf' }],
+    } as unknown as HostMsg);
+    const items = dom.window.document.querySelectorAll('#slash-popup .slash-item');
+    expect(items[0].textContent).toContain('@file data/report.pdf'); // attach form label
+    input.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    expect(input.value).toBe('@file /ws/data/report.pdf');
+    expect(sent.some((m) => m.type === 'fileQuery')).toBe(true);
   });
 
   it('@ works mid-line and replaces only the mention token', async () => {
@@ -352,7 +373,56 @@ describe('webview bundle (dist/media/chat.js)', () => {
       files: [{ rel: 'CHANGELOG.md', abs: '/ws/CHANGELOG.md' }],
     } as unknown as HostMsg);
     input.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
-    expect(input.value).toBe('please check @file /ws/CHANGELOG.md');
+    expect(input.value).toBe('please check @/ws/CHANGELOG.md');
+  });
+
+  it('Browse… row posts browse; browseResult inserts a @<path> reference', async () => {
+    const { dom, sent, post, input } = bootWebview();
+    input.value = 'look at @';
+    input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 300));
+    post({ type: 'fileResults', query: '', files: [] } as unknown as HostMsg);
+    const items = dom.window.document.querySelectorAll('#slash-popup .slash-item');
+    const browse = Array.from(items).find((el) => el.textContent?.includes('Browse'));
+    expect(browse).toBeDefined();
+    (browse as HTMLElement).click();
+    expect(sent.some((m) => m.type === 'browse')).toBe(true);
+    post({ type: 'browseResult', path: '/opt/data/archive' } as unknown as HostMsg);
+    expect(input.value).toBe('look at @/opt/data/archive');
+  });
+
+  it('insertTokens appends @file tokens on their own lines', () => {
+    const { dom, post, input } = bootWebview();
+    input.value = 'check this';
+    post({ type: 'insertTokens', tokens: ['@file /tmp/a.zip', '@file /tmp/b.pdf'] } as unknown as HostMsg);
+    expect(input.value).toBe('check this\n@file /tmp/a.zip\n@file /tmp/b.pdf');
+    post({ type: 'insertTokens', tokens: ['@file /tmp/c.csv'] } as unknown as HostMsg);
+    expect(input.value).toBe('check this\n@file /tmp/a.zip\n@file /tmp/b.pdf\n@file /tmp/c.csv');
+  });
+
+  it('dropping a non-image file appends an @file attach token', () => {
+    const { dom, input } = bootWebview();
+    const file = { name: 'bundle.zip', type: 'application/zip', path: '/tmp/bundle.zip' };
+    const ev = new dom.window.Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', { value: { files: [file] } });
+    dom.window.document.dispatchEvent(ev);
+    expect(input.value).toBe('@file /tmp/bundle.zip');
+  });
+
+  it('dropping an image file does not insert an attach token (chips flow)', () => {
+    const { dom, input } = bootWebview();
+    const file = { name: 'pixel.png', type: 'image/png', path: '/tmp/pixel.png' };
+    const ev = new dom.window.Event('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', { value: { files: [file] } });
+    dom.window.document.dispatchEvent(ev);
+    expect(input.value).toBe('');
+  });
+
+  it('attach button posts attachDialog', () => {
+    const { dom, sent } = bootWebview();
+    const btn = dom.window.document.getElementById('attach-btn') as HTMLButtonElement;
+    btn.click();
+    expect(sent.some((m) => m.type === 'attachDialog')).toBe(true);
   });
 
   it('adds a copy button to the thinking block', () => {

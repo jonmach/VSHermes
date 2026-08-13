@@ -27,7 +27,9 @@ export type HostMessage =
   | { type: 'info'; text: string }
   | { type: 'error'; message: string }
   | { type: 'model'; model: string | null }
-  | { type: 'fileResults'; query: string; files: FileEntry[] };
+  | { type: 'fileResults'; query: string; files: FileEntry[] }
+  | { type: 'insertTokens'; tokens: string[] }
+  | { type: 'browseResult'; path: string | null };
 
 /** A workspace file offered by the @file picker. */
 export interface FileEntry {
@@ -58,6 +60,8 @@ export type WebviewMessage =
   | { type: 'setTitle'; title: string }
   | { type: 'showStatus' }
   | { type: 'fileQuery'; query: string }
+  | { type: 'attachDialog' }
+  | { type: 'browse' }
   | { type: 'diag'; level: 'info' | 'error'; message: string };
 
 export type { ApprovalDecision, ChatMessage, MessagePart, SessionSummary, StreamEvent, SyncReport };

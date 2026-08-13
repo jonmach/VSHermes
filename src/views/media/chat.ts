@@ -55,7 +55,9 @@ const $ = <T extends HTMLElement>(id: string): T =>
   document.getElementById(id.replace(/^#/, '')) as T;
 const messagesEl = $('#messages');
 const inputEl = $('#input') as HTMLTextAreaElement;
+const inputAreaEl = $('#input-area');
 const sendBtn = $('#send-btn') as HTMLButtonElement;
+const attachBtn = $('#attach-btn') as HTMLButtonElement;
 const chipsEl = $('#chips');
 const slashPopup = $('#slash-popup');
 const approvalEl = $('#approval');
@@ -102,6 +104,8 @@ const state: {
   fileDebounce: ReturnType<typeof setTimeout> | undefined;
   filePostedQuery: string | null;
   mentionStart: number;
+  /** Picker insert form: `@<path>` (plain reference) or `@file <path>` (attach). */
+  mentionKind: 'ref' | 'attach';
   maxImageBytes: number;
   maxImageDimension: number;
 } = {
@@ -124,6 +128,7 @@ const state: {
   fileDebounce: undefined,
   filePostedQuery: null,
   mentionStart: 0,
+  mentionKind: 'ref',
   maxImageBytes: 8 * 1024 * 1024,
   maxImageDimension: 4096,
 };
@@ -607,12 +612,15 @@ function updatePopup(): void {
   }
   // The last '@' anywhere on the current line triggers the file picker —
   // the mention must be the final token on the line, so typing prose after
-  // it dismisses the popup naturally.
-  const fm = /@(?:file\s+)?(\S*)$/.exec(line);
+  // it dismisses the popup naturally. `@file ` selects the ATTACH form
+  // (copied into attachments on send); a bare `@` selects the reference
+  // form (never copied).
+  const fm = /@(file\s+)?(\S*)$/.exec(line);
   if (fm) {
     state.popupMode = 'file';
     state.mentionStart = lineStart + fm.index;
-    renderFileItems(fm[1]);
+    state.mentionKind = fm[1] ? 'attach' : 'ref';
+    renderFileItems(fm[2]);
     return;
   }
   hideSlashPopup();
@@ -654,16 +662,25 @@ function renderFileItems(query: string): void {
   if (items.length === 0) {
     const el = document.createElement('div');
     el.className = 'slash-item';
-    el.innerHTML = `<span class="sname">@file</span><span class="ssum">no matching files</span><span class="skind">file</span>`;
+    el.innerHTML = `<span class="sname">${state.mentionKind === 'attach' ? '@file' : '@'}</span><span class="ssum">no matching files</span><span class="skind">file</span>`;
     slashPopup.appendChild(el);
   }
   items.forEach((f, i) => {
     const el = document.createElement('div');
     el.className = 'slash-item' + (i === state.fileIndex ? ' selected' : '');
-    el.innerHTML = `<span class="sname">@file ${escapeHtml(f.rel)}</span><span class="skind">file</span>`;
+    const label = state.mentionKind === 'attach' ? `@file ${f.rel}` : `@${f.rel}`;
+    el.innerHTML = `<span class="sname">${escapeHtml(label)}</span><span class="skind">file</span>`;
     el.onclick = () => selectFile(f.abs);
     slashPopup.appendChild(el);
   });
+  const browse = document.createElement('div');
+  browse.className = 'slash-item';
+  browse.innerHTML = `<span class="sname">Browse…</span><span class="ssum">any file or folder on this machine</span>`;
+  browse.onclick = () => {
+    hideSlashPopup();
+    post({ type: 'browse' });
+  };
+  slashPopup.appendChild(browse);
   slashPopup.classList.add('show');
 }
 
@@ -674,7 +691,20 @@ function filteredFiles(): FileEntry[] {
 
 function selectFile(absPath: string): void {
   hideSlashPopup();
-  inputEl.value = inputEl.value.slice(0, state.mentionStart) + `@file ${absPath}`;
+  const prefix = state.mentionKind === 'attach' ? '@file ' : '@';
+  inputEl.value = inputEl.value.slice(0, state.mentionStart) + `${prefix}${absPath}`;
+  resizeInput();
+  inputEl.focus();
+}
+
+/** Insert attach tokens at the end of the input, each on its own line
+ *  (paperclip picker, drag & drop, palette command). */
+function appendTokens(tokens: string[]): void {
+  hideSlashPopup();
+  for (const t of tokens) {
+    if (inputEl.value && !inputEl.value.endsWith('\n')) inputEl.value += '\n';
+    inputEl.value += t;
+  }
   resizeInput();
   inputEl.focus();
 }
@@ -847,6 +877,18 @@ function onHostMessage(msg: HostMessage): void {
         if (state.popupMode === 'file') updatePopup();
       }
       break;
+    case 'browseResult':
+      // OS picker for a plain reference (`@<path>`) — never copied.
+      if (msg.path) {
+        hideSlashPopup();
+        inputEl.value = inputEl.value.slice(0, state.mentionStart) + `@${msg.path}`;
+        resizeInput();
+        inputEl.focus();
+      }
+      break;
+    case 'insertTokens':
+      appendTokens(msg.tokens);
+      break;
   }
 }
 
@@ -939,7 +981,34 @@ inputEl.addEventListener('drop', (e) => {
   }
 });
 
-inputEl.addEventListener('dragover', (e) => e.preventDefault());
+// Drag & drop anywhere on the panel: images → chips (existing flow), any
+// other file → attach token (`@file <path>`; the host copies it into
+// attachments at send time). Non-image drops rely on File.path, which VS
+// Code webviews expose for dropped files.
+document.addEventListener('dragover', (e) => {
+  if (e.dataTransfer?.types.includes('Files')) {
+    e.preventDefault();
+    inputAreaEl.classList.add('dragover');
+  }
+});
+document.addEventListener('dragleave', () => inputAreaEl.classList.remove('dragover'));
+document.addEventListener('drop', (e) => {
+  const dt = e.dataTransfer;
+  if (!dt || dt.files.length === 0) return;
+  inputAreaEl.classList.remove('dragover');
+  e.preventDefault();
+  for (const f of Array.from(dt.files)) {
+    if (f.type.startsWith('image/')) {
+      void addImageFile(f);
+    } else {
+      const p = (f as File & { path?: string }).path;
+      if (p) appendTokens([`@file ${p}`]);
+      else addNote(`Could not resolve the path for “${f.name}”.`, true);
+    }
+  }
+});
+
+attachBtn.addEventListener('click', () => post({ type: 'attachDialog' }));
 
 sendBtn.addEventListener('click', () => {
   if (state.streaming) {

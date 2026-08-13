@@ -154,6 +154,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     .chip img { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; border: 1px solid var(--vsh-border); }
     .chip .x { position: absolute; top: -6px; right: -6px; background: var(--vsh-error); color: #fff; border: none; border-radius: 50%; width: 16px; height: 16px; font-size: 10px; line-height: 16px; cursor: pointer; text-align: center; }
     #input-row { display: flex; gap: 6px; align-items: flex-end; }
+    #attach-btn { background: none; border: none; color: var(--vsh-muted); padding: 7px 8px 8px; cursor: pointer; border-radius: 6px; line-height: 1; flex: none; }
+    #attach-btn:hover { color: var(--vsh-fg); background: var(--vsh-border); }
+    #input-area.dragover { outline: 2px dashed var(--vsh-accent); outline-offset: -4px; }
     #input { flex: 1; resize: none; background: var(--vsh-user-bubble); color: var(--vsh-fg); border: 1px solid var(--vsh-border); border-radius: 6px; padding: 8px; font-family: inherit; font-size: inherit; max-height: 180px; outline: none; overflow-wrap: anywhere; }
     #input:focus { border-color: var(--vsh-accent); }
     #send-btn { background: var(--vsh-accent); color: #fff; border: none; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-weight: 600; }
@@ -200,7 +203,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     </div></div>
     <div id="chips"></div>
     <div id="input-row">
-      <textarea id="input" rows="1" placeholder="Message Hermes…"></textarea>
+      <button id="attach-btn" title="Attach file(s) — copied into the session attachments" aria-label="Attach file(s)"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 6v11.5a4 4 0 0 1-4 4 4 4 0 0 1-4-4V5a2.5 2.5 0 0 1 5 0v10.5a1 1 0 0 1-2 0V6H10v9.5a2.5 2.5 0 0 0 5 0V6a4 4 0 0 0-8 0v11.5a5.5 5.5 0 0 0 11 0V6h-1.5z"/></svg></button>
+      <textarea id="input" rows="1" placeholder="Message Hermes… (drag files to attach)"></textarea>
       <button id="send-btn">&#10148;</button>
     </div>
   </div>
