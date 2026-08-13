@@ -211,6 +211,15 @@ class VSHermes {
         case 'ready':
           await this.refreshEndpointsPanel();
           break;
+        case 'diag':
+          this.logInfo(`endpoints panel [${msg.level}]: ${msg.message}`);
+          if (msg.level === 'error') {
+            this.endpointsPanel.post({
+              type: 'note',
+              text: `Panel script error: ${msg.message}`,
+            });
+          }
+          break;
         case 'add': {
           const url = normalizeUrl(msg.url);
           if (!url) {

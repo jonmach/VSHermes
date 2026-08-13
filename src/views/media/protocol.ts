@@ -90,4 +90,5 @@ export type EndpointsWebviewMessage =
   | { type: 'remove'; id: string }
   | { type: 'setActive'; id: string | null }
   | { type: 'setKey'; id: string; key: string }
-  | { type: 'test'; id: string };
+  | { type: 'test'; id: string }
+  | { type: 'diag'; level: 'info' | 'error'; message: string };

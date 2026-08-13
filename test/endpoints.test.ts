@@ -33,11 +33,19 @@ function bootPanel(): { dom: JSDOM; sent: HostMsg[]; post: (m: HostMsg) => void 
     runScripts: 'dangerously',
     url: 'https://vscode-webview.test',
     beforeParse(window) {
-      (window as unknown as { acquireVsCodeApi: () => unknown }).acquireVsCodeApi = () => ({
-        postMessage: (m: HostMsg) => sent.push(m),
-        getState: () => undefined,
-        setState: () => undefined,
-      });
+      // Real VS Code contract: acquireVsCodeApi may only be called ONCE —
+      // repeated calls throw. The stub enforces that so a bundle which
+      // calls it per-message (the original bug) fails these tests.
+      let calls = 0;
+      (window as unknown as { acquireVsCodeApi: () => unknown }).acquireVsCodeApi = () => {
+        calls += 1;
+        if (calls > 1) throw new Error('acquireVsCodeApi can only be called once');
+        return {
+          postMessage: (m: HostMsg) => sent.push(m),
+          getState: () => undefined,
+          setState: () => undefined,
+        };
+      };
     },
   });
   const script = dom.window.document.createElement('script');

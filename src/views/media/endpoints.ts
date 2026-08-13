@@ -51,14 +51,31 @@ const state: PanelState = {
 
 // ── messages ───────────────────────────────────────────────────────
 
+// acquireVsCodeApi may only be called ONCE per webview — repeated calls
+// throw, so grab the handle at load and reuse it (same pattern as chat.ts).
+const vscode = acquireVsCodeApi();
+
 function post(msg: EndpointsWebviewMessage): void {
+  vscode.postMessage(msg);
+}
+
+// Boot diagnostics — a dead panel must never be silent: script errors are
+// reported to the host, which logs them and shows a note in the panel.
+window.addEventListener('error', (e) => {
   try {
-    const vscode = acquireVsCodeApi();
-    vscode.postMessage(msg);
+    post({ type: 'diag', level: 'error', message: `panel error: ${e.message}` });
   } catch {
     /* host unreachable */
   }
-}
+});
+window.addEventListener('unhandledrejection', (e) => {
+  try {
+    const reason = (e as PromiseRejectionEvent).reason;
+    post({ type: 'diag', level: 'error', message: `panel unhandled rejection: ${String(reason ?? '')}` });
+  } catch {
+    /* host unreachable */
+  }
+});
 
 function onHostMessage(msg: EndpointsHostMessage): void {
   if (msg.type === 'state') {
