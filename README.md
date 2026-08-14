@@ -1,6 +1,6 @@
 # VSHermes — Hermes Agent chat for VS Code
 
-> One product, current build 2.0.4 — each build re-verified
+> One product, current build 2.0.5 — each build re-verified
 > against the pinned Hermes API surface. This README describes current
 > functionality, not history (see CHANGELOG.md for the change log).
 
@@ -9,6 +9,13 @@ running over the **Hermes API Server** — not a terminal wrapper. The chat
 lives in a webview panel in the sidebar: real multiline input, image paste,
 a slash-command picker, session history, live tool activity, approvals, and
 model switching.
+
+## Screenshots
+
+![VSHermes chat connected to a Hermes server — the tab title shows the active
+server, the compatibility banner carries both versions, the History tree
+groups sessions per server, the Endpoints tab holds the connection forms,
+and the @file picker attaches files](images/chat1.png)
 
 ## Features
 
@@ -75,7 +82,8 @@ model switching.
   `/memory` `/mcp` `/plugins` …) are listed honestly as **unsupported** and
   never sent as literal text
 
-**Endpoints** (gear codicon in the chat title bar, or "VSHermes: Endpoints…")
+**Endpoints** (sidebar tab in the VSHermes section, or the `$(server)`
+chat title-bar icon / "VSHermes: Endpoints…" — both reveal the tab)
 - A built-in **Local connection** row is always present (legacy resolution:
   baseUrl setting → `$HERMES_HOME/.env` → `http://127.0.0.1:8642`) — click
   Activate to return to it; it has none of the remote constraints
@@ -87,9 +95,9 @@ model switching.
   (DeepSeek, OpenAI, …), which Hermes holds in its own config
 - **Remote endpoints require a key** — a non-loopback profile without an
   API key is refused at connect ("Remote endpoints require the server's
-  API_SERVER_KEY — set it in the Endpoints panel (Save key)"), the panel
-  badge shows `key required`, and **activation is refused too** — a
-  keyless remote endpoint never becomes active (panel Activate and
+  API_SERVER_KEY — set it via "VSHermes: Set Endpoint API Key""), the row
+  shows a `key required` warning, and **activation is refused too** — a
+  keyless remote endpoint never becomes active (tree Activate and
   auto-switch on session open both fail with a clear note). Keyless
   connections are only possible to loopback (local) servers
 - **Test** probes reachability *and* validates the key (an authenticated
@@ -120,12 +128,16 @@ model switching.
 - Terminal (CLI) sessions open with full history — one pool of sessions
 
 **Actions & navigation**
-- Chat header icons: New Chat, Check Sync, Switch Model, Refresh History,
+- Chat header icons: New Chat, Compatibility Check, Switch Model, Refresh History,
   Export as Markdown, Copy Conversation
 - Every action also in the command palette (`VSHermes: …`), incl. Set API Key
   and **Search History** (filters the history tree by title / id / model /
   source; empty input clears)
 - Status bar: connected / offline / sync-warning + current model
+- The chat tab shows which server you're on: title "Chat (profile name)"
+  (or "Chat (Local)" for the local connection — hostname only for a
+  profile-less remote), the header badge shows host:port, and the
+  status-bar tooltip the full URL
 - Model switching per session (provider + model pickers, model lock)
 - **Health polling:** `/health` is checked every 30s; gateway restarts flip
   the connection state automatically, and reconnect refreshes capabilities,
@@ -264,16 +276,21 @@ Settings: `vsh.hermes.baseUrl` (default `http://127.0.0.1:8642`),
 `vsh.hermes.checkSyncOnStartup`, `vsh.hermes.maxImageBytes`,
 `vsh.hermes.maxImageDimension`, `vsh.hermes.imageTransfer`.
 
-## Sync verdicts
+## Compatibility verdicts
 
-| Verdict  | Meaning                                                               | Action                                        |
-| -------- | --------------------------------------------------------------------- | --------------------------------------------- |
-| ok       | aligned with the verified surface                                     | —                                             |
-| outdated | Hermes missing a required feature/endpoint, or older than the minimum | upgrade Hermes (or install an older VSHermes) |
-| ahead    | Hermes advertises features the plugin doesn't know                    | informational — plugin still works            |
-| unknown  | server unreachable / bad key                                          | fix connection                                |
+| Verdict   | Meaning                                                                   | Action                        |
+| --------- | ------------------------------------------------------------------------- | ----------------------------- |
+| ok        | every feature/endpoint VSHermes needs is present, version ≥ the minimum   | — (green)                     |
+| ahead     | Hermes has extra capabilities VSHermes doesn't use                        | — (green; extras are logged, not flagged) |
+| untested  | version below the minimum but nothing missing                             | — (green; note in the status-bar tooltip) |
+| outdated  | a required feature/endpoint is missing                                    | upgrade Hermes to the minimum version |
+| unknown   | server unreachable / bad key                                              | fix the connection            |
 
-Re-check anytime via the header icon, the `VSHermes: Check Hermes Sync`
+Green = the plugin works fully. Only `outdated` is a warning, and it says
+exactly what's missing and what to upgrade to — the report is about the
+server's capabilities, never "the plugin is incompatible".
+
+Re-check anytime via the header icon, the `VSHermes: Compatibility Check`
 command, or `npm run check-sync` (standalone script).
 
 ## Roadmap
