@@ -1,2 +1,0 @@
-1) Use the Hermes icon for the plugin
-2) Add a settings page to allow things such as endpoint, API etc.
