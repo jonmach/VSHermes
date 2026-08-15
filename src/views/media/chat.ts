@@ -94,6 +94,13 @@ const state: {
   active: RenderMsg | null;
   /** Lineage notice text (compression / fork) pinned above the transcript. */
   lineage: string | null;
+  /**
+   * Per-turn usage keyed by index into `messages`. The host re-posts the
+   * full transcript after every run (refreshSessionAfterRun), which wipes
+   * and rebuilds the DOM — this map lets renderMessages re-attach the
+   * usage lines that were appended live during streaming.
+   */
+  usageByTurn: Map<number, { input_tokens: number; output_tokens: number; total_tokens: number }>;
   chips: string[];
   approval: unknown | null;
   slashIndex: number;
@@ -119,6 +126,7 @@ const state: {
   messages: [],
   active: null,
   lineage: null,
+  usageByTurn: new Map(),
   chips: [],
   approval: null,
   slashIndex: 0,
@@ -430,6 +438,16 @@ function renderMessages(messages: ChatMessage[]): void {
       }
     }
   }
+  // Re-attach per-turn usage lines recorded during streaming. The host
+  // re-posts the full transcript after every run (refreshSessionAfterRun),
+  // which rebuilds this list from stored messages — the lines appended
+  // live by appendUsageLine would otherwise be wiped.
+  for (const [idx, usage] of state.usageByTurn) {
+    const msg = state.messages[idx];
+    if (msg && msg.kind === 'assistant' && !msg.el.querySelector('.usage-line')) {
+      appendUsageLine(msg, usage);
+    }
+  }
   if (atBottom) {
     scrollBottom();
   } else if (prevHeight > 0) {
@@ -554,7 +572,14 @@ function onStreamEvent(ev: StreamEvent): void {
     case 'run.completed':
       if (ev.usage && (ev.usage.input_tokens > 0 || ev.usage.output_tokens > 0)) {
         const target = state.active ?? lastAssistant();
-        if (target) appendUsageLine(target, ev.usage);
+        if (target) {
+          appendUsageLine(target, ev.usage);
+          // Remember the usage for this message so the post-run transcript
+          // rebuild (host re-posts 'messages' after every run) re-attaches
+          // the line instead of erasing it.
+          const idx = state.messages.indexOf(target);
+          if (idx >= 0) state.usageByTurn.set(idx, ev.usage);
+        }
       }
       break;
     case 'done':
