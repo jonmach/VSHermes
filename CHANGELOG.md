@@ -1,3 +1,68 @@
+## 2.0.5 (2026-08-13)
+
+- **Chat tab shows the connected server** — the view title is now
+  "Chat (profile name)" (endpoint profile), "Chat (Local)" for the
+  legacy loopback connection, or "Chat (hostname)" for a profile-less
+  remote URL; the header badge shows host:port when connected
+  (previously just "● Hermes"), and the status-bar tooltip carries the
+  full base URL. The title follows the server, not the connection state
+  — it changes only on endpoint switches.
+- **Chat header model badge removed** — the "⚙ hermes-agent" pill in the
+  chat header duplicated the toolbar Switch Model cog (action) and the
+  status bar (current-model display), and its label showed the server's
+  default-model alias, not a pickable model. Switching stays on the
+  toolbar cog + palette; the status bar still shows the active model.
+- **Empty-chat hint merged with the /help tip** — the one-time
+  "Connected to Hermes X. Type /help for commands" welcome note is gone
+  (the header badge + status bar already confirm the connection); the
+  hint is now "No session yet — type a message below to start one. Type
+  /help for commands."
+- **Slash catalog reworked after a TUI-only audit** — every "TUI-only"
+  entry was checked against the live API surface: /toolsets (GET
+  /v1/toolsets) and /doctor (GET /health/detailed — readiness checks,
+  gateway state, disk) are now WORKING actions; /version and /reload are
+  client-side actions (versions + env re-resolve/reconnect); /goal and
+  /learn reclassified as informational (sent as text — the agent can act
+  on them); the /export summary corrected (it exports a profile archive,
+  not the conversation); /paste and /image now point at the native paste
+  handler / paperclip; /quit dropped as meaningless in a plugin. The
+  rest stay honestly TUI-only (undo, rollback, snapshot, mcp, cron,
+  usage, …).
+- **Endpoints → collapsible sidebar form tab** — the endpoint editor is
+  now a WebviewView in the VSHermes sidebar section (next to Chat/History)
+  instead of an editor-area panel: the original inline-form experience
+  (per-profile name/url fields, key field, Activate/Test/Save/Remove,
+  inline test results, Add row) now lives in a collapsible tab. The
+  `$(server)` chat title-bar codicon is back and reveals the tab. (A
+  native TreeView iteration was tried and reverted — the inline form is
+  the UX that works.)
+- **"Check Sync" renamed → "Compatibility Check"** — the check never
+  synchronized anything; it diffs the Hermes server's version and
+  capability surface against the plugin's pinned manifest. The command id
+  `vsh.hermes.checkSync` and the `vsh.hermes.checkSyncOnStartup` setting
+  are unchanged.
+- **Compatibility presentation reframed — no more "incompatible"** — the
+  binary "in sync / out of sync" framing is gone. The report is now
+  feature coverage with three visual states: green (all VSHermes features
+  available — covers aligned servers, servers with extra unknown
+  capabilities, and servers just below the verified minimum), amber (only
+  when a required feature/endpoint is actually missing: a count, a short
+  described list — inline when ≤3 — and an upgrade recommendation), and
+  gray (server unreachable). "Not compatible", "VSHermes incompatible"
+  and "a newer VSHermes may surface them" wording deleted.
+- **Banner shows both versions** — "✓ VSHermes 2.0.1 · Hermes 0.20.0"
+  (the plugin version was previously invisible in the UI; it's also in
+  the status-bar tooltip now). The "checked <time>" suffix is gone, and
+  the green state no longer claims "all features available" — the
+  versions alone say everything is fine; explanatory text appears only
+  in the non-green states.
+- **Honest failure state** — a failed re-check no longer leaves the old
+  report on screen; the banner flips to "? Could not reach the Hermes API
+  server to check compatibility."
+- **Dead "Check details" button removed** from the out-of-date toast (it
+  had no handler); the banner already carries the detail.
+
+
 # Changelog
 
 ## 2.0.3 (2026-08-13)
