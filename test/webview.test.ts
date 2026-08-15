@@ -237,6 +237,87 @@ describe('webview bundle (dist/media/chat.js)', () => {
     expect(dom.window.document.getElementById('messages')!.textContent).toContain('stays put');
   });
 
+  it('renders a per-turn usage line from run.completed.usage', () => {
+    const { dom, post } = bootWebview();
+    const base = {
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      syncReport: null,
+      sessionId: 's1',
+      model: 'm1',
+      sessions: [],
+      slashCommands: [],
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    };
+    post(base as unknown as HostMsg);
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [{ role: 'user', content: 'hello' }],
+    } as unknown as HostMsg);
+    // streaming turn → run.completed with usage
+    post({
+      type: 'stream',
+      event: { type: 'run.started', session_id: 's1' },
+    } as unknown as HostMsg);
+    post({
+      type: 'stream',
+      event: { type: 'message.started', session_id: 's1', message: { id: 'm1', role: 'assistant' } },
+    } as unknown as HostMsg);
+    post({
+      type: 'stream',
+      event: { type: 'assistant.delta', session_id: 's1', message_id: 'm1', delta: 'hi there' },
+    } as unknown as HostMsg);
+    post({
+      type: 'stream',
+      event: {
+        type: 'run.completed',
+        session_id: 's1',
+        message_id: 'm1',
+        completed: true,
+        messages: [],
+        usage: { input_tokens: 1234, output_tokens: 56, total_tokens: 1290 },
+      },
+    } as unknown as HostMsg);
+    const messages = dom.window.document.getElementById('messages')!;
+    expect(messages.textContent).toContain('1.2k in');
+    expect(messages.textContent).toContain('56 out');
+    expect(messages.textContent).toContain('1.3k total');
+    expect(messages.querySelector('.usage-line')).not.toBeNull();
+  });
+
+  it('pins a lineage notice above the transcript and clears it on session switch', () => {
+    const { dom, post } = bootWebview();
+    const base = {
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      syncReport: null,
+      sessions: [],
+      slashCommands: [],
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    };
+    post({ ...base, sessionId: 's1', model: 'm1' } as unknown as HostMsg);
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [{ role: 'user', content: 'parent transcript' }],
+    } as unknown as HostMsg);
+    post({ type: 'lineage', text: 'This session continues after context compression' } as unknown as HostMsg);
+    const messages = dom.window.document.getElementById('messages')!;
+    expect(messages.querySelector('.lineage-note')?.textContent).toContain('context compression');
+    // transcript sits BELOW the notice
+    const note = messages.querySelector('.lineage-note')!;
+    const transcriptMsg = Array.from(messages.children).find((c) => c.textContent?.includes('parent transcript'))!;
+    expect(note.compareDocumentPosition(transcriptMsg) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // switching sessions clears the stale notice
+    post({ ...base, sessionId: 's2', model: 'm1' } as unknown as HostMsg);
+    expect(messages.querySelector('.lineage-note')).toBeNull();
+  });
+
   it('clears the list and shows the start hint when the current session is deleted', () => {
     const { dom, post } = bootWebview();
     const base = {

@@ -1018,6 +1018,7 @@ class VSHermes {
         c.getSession(id).catch(() => null),
       ]);
       this.postTranscript(id, msgs.data);
+      void this.postLineageNotice(session?.session ?? null);
       this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport, sessionId: id, model: session?.session.model ?? null, sessions: [], slashCommands: SLASH_COMMANDS, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
       this.focusChat();
     } catch (err) {
@@ -1190,6 +1191,29 @@ class VSHermes {
       this.visionCapsCache = undefined;
     }
     return this.visionCapsCache;
+  }
+
+  private async postLineageNotice(session: SessionSummary | null): Promise<void> {
+    try {
+      if (!session?.parent_session_id) {
+        // No lineage — make sure any stale notice is cleared.
+        this.view.post({ type: 'lineage', text: '' });
+        return;
+      }
+      const c = await this.ensureClient();
+      const parent = await c.getSession(session.parent_session_id).catch(() => null);
+      const kind = parent?.session.end_reason;
+      const parentTitle = parent?.session.title ?? session.parent_session_id;
+      const text =
+        kind === 'compression'
+          ? `This session continues after context compression (parent: ${parentTitle})`
+          : kind === 'branched'
+            ? `This session was forked from “${parentTitle}”`
+            : `This session continues from “${parentTitle}”`;
+      this.view.post({ type: 'lineage', text });
+    } catch (err) {
+      this.logInfo(`lineage lookup failed: ${(err as Error).message}`);
+    }
   }
 
   private async refreshSessionAfterRun(sid: string): Promise<void> {

@@ -11,6 +11,7 @@
 import * as vscode from 'vscode';
 import type { SessionSummary } from '../api/types';
 import { filterSessions } from '../sessionFilter';
+import { sessionTooltip, sessionUsage } from '../sessionFormat';
 
 /** Friendlier labels for the session source field. */
 const SOURCE_LABELS: Record<string, string> = {
@@ -45,10 +46,12 @@ export class SessionTreeItem extends vscode.TreeItem {
   ) {
     super(session.title || session.preview || session.id, vscode.TreeItemCollapsibleState.None);
     this.id = `${endpointId}:${session.id}`;
-    this.tooltip = `${session.id}\n${session.preview ?? ''}`.trim();
+    this.tooltip = sessionTooltip(session);
     const rel = relativeTime(session.last_active);
     const source = SOURCE_LABELS[session.source ?? ''] ?? session.source ?? '?';
-    this.description = `${source} · ${session.model ?? '?'} · ${session.message_count} msgs · ${rel}`;
+    const usage = sessionUsage(session);
+    const lineage = session.end_reason === 'compression' ? ' · compressed' : '';
+    this.description = `${source} · ${session.model ?? '?'} · ${session.message_count} msgs${usage} · ${rel}${lineage}`;
     this.contextValue = 'session';
     this.iconPath = new vscode.ThemeIcon('comment-discussion');
     // Row click opens the session — argument carries the owning endpoint so

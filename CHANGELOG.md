@@ -1,6 +1,28 @@
 # Changelog
 
-## Unreleased
+## 2.0.7 (2026-08-15)
+
+- **Per-turn usage meter in chat** — when the gateway reports usage on a
+  completed turn, a muted line appears under the last message bubble:
+  "↑1.2k in · ↓56 out · 1.3k total", with the raw input/output/cache/
+  reasoning breakdown on hover. Sessions with no recorded usage show
+  nothing.
+- **Lineage notices for compressed / forked sessions** — opening a session
+  that continues from an earlier one now pins a one-line notice above the
+  transcript explaining that the visible chat is a continuation (a
+  compression carried the conversation into a new session, or a fork
+  branched from a parent). Clears when you switch sessions; most sessions
+  never show it.
+- **Token totals and cost in History** — each session row now reads e.g.
+  "· 152k tok · $0.05" with a hover tooltip carrying the full
+  input/output/cache/reasoning/cost breakdown. Data-driven, so older
+  sessions show it too — provided the server recorded usage for them.
+- **Distinct sidebar tab icons for Chat / History / Endpoints** — the three
+  views previously inherited the VSHermes app icon, so the collapsed tabs
+  were indistinguishable at a glance. Each tab now carries its own codicon:
+  `$(comment-discussion)` (speech bubble) for Chat, `$(history)` (clock) for
+  History, and `$(server)` for Endpoints — the same glyph as the chat
+  title-bar Endpoints button.
 
 ## 2.0.6 (2026-08-14)
 

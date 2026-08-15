@@ -92,6 +92,8 @@ const state: {
   streaming: boolean;
   messages: RenderMsg[];
   active: RenderMsg | null;
+  /** Lineage notice text (compression / fork) pinned above the transcript. */
+  lineage: string | null;
   chips: string[];
   approval: unknown | null;
   slashIndex: number;
@@ -116,6 +118,7 @@ const state: {
   streaming: false,
   messages: [],
   active: null,
+  lineage: null,
   chips: [],
   approval: null,
   slashIndex: 0,
@@ -322,6 +325,57 @@ function addNote(text: string, error = false): void {
   scrollBottom();
 }
 
+/** Last rendered assistant message, or null. */
+function lastAssistant(): RenderMsg | null {
+  for (let i = state.messages.length - 1; i >= 0; i--) {
+    if (state.messages[i].kind === 'assistant') return state.messages[i];
+  }
+  return null;
+}
+
+/** Compact token count: 1234 → "1.2k", 1234567 → "1.2M", 152000 → "152k" (no trailing .0). Mirrors sessionFormat.ts. */
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}k`;
+  return `${n}`;
+}
+
+/**
+ * Per-turn usage line under the last assistant message, fed by
+ * run.completed.usage. Rendered as a muted one-liner; the full breakdown
+ * (incl. cache/reasoning when the session summary has it) lives in the
+ * status-bar tooltip via the session totals.
+ */
+function appendUsageLine(msg: RenderMsg, usage: { input_tokens: number; output_tokens: number; total_tokens: number }): void {
+  const line = document.createElement('div');
+  line.className = 'usage-line';
+  line.title = `${usage.input_tokens} in · ${usage.output_tokens} out · ${usage.total_tokens} total`;
+  line.textContent = `↑${fmtTokens(usage.input_tokens)} in · ↓${fmtTokens(usage.output_tokens)} out · ${fmtTokens(usage.total_tokens)} total`;
+  msg.el.appendChild(line);
+  scrollBottom();
+}
+
+/** Session-lineage notice (compression / fork) — pinned above the transcript. */
+function addLineageNote(text: string): void {
+  state.lineage = text;
+  renderLineageNote();
+}
+
+function renderLineageNote(): void {
+  const existing = messagesEl.querySelector(':scope > .lineage-note');
+  existing?.remove();
+  const prior = state.messages.findIndex((m) => m.el.classList.contains('lineage-note'));
+  if (prior >= 0) state.messages.splice(prior, 1);
+  if (!state.lineage) return;
+  const el = document.createElement('div');
+  el.className = 'lineage-note';
+  el.textContent = state.lineage;
+  const spacer = messagesEl.querySelector(':scope > .spacer');
+  if (spacer) spacer.after(el);
+  else messagesEl.prepend(el);
+  state.messages.push({ el, kind: 'note', tools: new Map() });
+}
+
 function scrollBottom(): void {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
@@ -383,6 +437,7 @@ function renderMessages(messages: ChatMessage[]): void {
     // pushes the scroll range down by the height delta.
     messagesEl.scrollTop = prevTop + (messagesEl.scrollHeight - prevHeight);
   }
+  renderLineageNote();
 }
 
 function extractImages(content: string | null): string[] {
@@ -497,6 +552,10 @@ function onStreamEvent(ev: StreamEvent): void {
       break;
     }
     case 'run.completed':
+      if (ev.usage && (ev.usage.input_tokens > 0 || ev.usage.output_tokens > 0)) {
+        const target = state.active ?? lastAssistant();
+        if (target) appendUsageLine(target, ev.usage);
+      }
       break;
     case 'done':
       state.streaming = false;
@@ -843,6 +902,7 @@ function onHostMessage(msg: HostMessage): void {
       if (msg.sessionId !== state.sessionId) {
         // The chat window shows the current session's messages only — any
         // session switch (/new, /clear, delete-current, …) resets the view.
+        state.lineage = null;
         renderMessages([]);
       }
       state.sessionId = msg.sessionId;
@@ -881,6 +941,9 @@ function onHostMessage(msg: HostMessage): void {
       state.streaming = false;
       updateRunUi();
       if (msg.error) addNote(`Stream ended with an error: ${msg.error}`, true);
+      break;
+    case 'lineage':
+      addLineageNote(msg.text);
       break;
     case 'info':
       addNote(msg.text);

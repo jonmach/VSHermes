@@ -220,6 +220,13 @@ export interface RunCompletedEvent extends StreamEventBase {
   message_id: string;
   completed: boolean;
   messages: Array<Record<string, unknown>>;
+  /** Per-turn token usage (same shape as SessionChatResponse.usage). */
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+    runtime?: RuntimeInfo;
+  };
 }
 
 export interface DoneEvent extends StreamEventBase {

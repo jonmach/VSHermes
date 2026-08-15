@@ -128,6 +128,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     .copy-btn { position: absolute; top: 4px; right: 4px; background: var(--vsh-user-bubble); color: var(--vsh-fg); border: 1px solid var(--vsh-border); border-radius: 4px; font-size: 11px; padding: 1px 6px; cursor: pointer; opacity: 0.75; }
     .copy-btn:hover { opacity: 1; border-color: var(--vsh-accent); }
     .msg-copy { background: transparent; color: var(--vsh-muted); border: none; border-radius: 4px; font-size: 12px; padding: 2px 6px; cursor: pointer; opacity: 0; transition: opacity 0.15s; align-self: center; flex-shrink: 0; }
+    .usage-line { font-size: 11px; color: var(--vsh-muted); margin-top: 2px; padding-left: 2px; user-select: none; }
     .msg:hover .msg-copy { opacity: 1; }
     .msg-copy:hover { color: var(--vsh-fg); background: var(--vsh-user-bubble); }
     .bubble img { max-width: 260px; border-radius: 6px; border: 1px solid var(--vsh-border); display: block; margin: 4px 0; }
