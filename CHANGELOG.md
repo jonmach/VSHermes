@@ -3,13 +3,14 @@
 ## 2.0.7 (2026-08-15)
 
 - **Per-turn usage meter in chat** — when the gateway reports usage on a
-  completed turn, a muted line appears under the last message bubble:
+  completed turn, a small badge appears under the last message bubble:
   "↑1.2k in · ↓56 out · 1.3k total", with the raw input/output/cache/
   reasoning breakdown on hover. Sessions with no recorded usage show
   nothing. (Fixed: the line was previously erased a moment after it
   appeared — the post-run transcript refresh rebuilt the message list
   from stored history and dropped the client-rendered line. It now
-  survives the rebuild.)
+  survives the rebuild, and renders as a bordered chip so it reads as
+  intentional UI rather than faint gray text.)
 - **Lineage notices for compressed / forked sessions** — opening a session
   that continues from an earlier one now pins a one-line notice above the
   transcript explaining that the visible chat is a continuation (a
