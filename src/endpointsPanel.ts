@@ -1,55 +1,42 @@
 /**
- * VSHermes Endpoints panel — a dedicated webview panel, hidden by default,
- * toggled by the title-bar codicon / palette command. All logic (profile
- * store, keys, test) lives in the extension host; this class is view
- * plumbing + the HTML shell.
+ * VSHermes Endpoints view — the endpoint form UI as a sidebar WebviewView
+ * (collapsible tab in the vsh-hermes section, next to Chat/History). All
+ * logic (profile store, keys, test) lives in the extension host; this
+ * class is view plumbing + the HTML shell.
  */
 
 import * as vscode from 'vscode';
 import type { EndpointsHostMessage, EndpointsWebviewMessage } from './views/media/protocol';
 
-export class EndpointsPanel {
-  static readonly viewType = 'vsh.hermes.endpointsPanel';
+export class EndpointsViewProvider implements vscode.WebviewViewProvider {
+  static readonly viewId = 'vsh.hermes.endpoints';
 
-  private panel: vscode.WebviewPanel | undefined;
-  private readonly disposables: vscode.Disposable[] = [];
+  private view: vscode.WebviewView | undefined;
+
   private readonly _onDidReceiveMessage = new vscode.EventEmitter<EndpointsWebviewMessage>();
   readonly onDidReceiveMessage = this._onDidReceiveMessage.event;
 
   constructor(private readonly extensionUri: vscode.Uri) {}
 
-  /** Show the panel, or hide (dispose) it when already visible. */
-  toggle(): void {
-    if (this.panel) {
-      this.panel.dispose();
-      return;
-    }
-    const panel = vscode.window.createWebviewPanel(
-      EndpointsPanel.viewType,
-      'VSHermes Endpoints',
-      vscode.ViewColumn.Beside,
-      { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'media')] },
-    );
-    this.panel = panel;
-    panel.webview.html = this.renderHtml(panel.webview);
-    panel.webview.onDidReceiveMessage((msg) => this._onDidReceiveMessage.fire(msg), null, this.disposables);
-    panel.onDidDispose(
-      () => {
-        this.panel = undefined;
-      },
-      null,
-      this.disposables,
-    );
+  resolveWebviewView(webviewView: vscode.WebviewView): void {
+    this.view = webviewView;
+    webviewView.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'media')],
+    };
+    webviewView.webview.html = this.renderHtml(webviewView.webview);
+    webviewView.webview.onDidReceiveMessage((msg) => this._onDidReceiveMessage.fire(msg));
+    webviewView.onDidDispose(() => {
+      this.view = undefined;
+    });
   }
 
   post(msg: EndpointsHostMessage): void {
-    void this.panel?.webview.postMessage(msg);
+    void this.view?.webview.postMessage(msg);
   }
 
   dispose(): void {
-    this.panel?.dispose();
     this._onDidReceiveMessage.dispose();
-    for (const d of this.disposables) d.dispose();
   }
 
   private renderHtml(webview: vscode.Webview): string {
@@ -87,7 +74,7 @@ export class EndpointsPanel {
   .badges { display: flex; gap: 6px; }
   .badge { font-size: 10px; text-transform: uppercase; padding: 1px 6px; border-radius: 8px; border: 1px solid var(--vsh-border); }
   .badge.remote { color: var(--vsh-warn); }
-  .badge.local { color: var(--vsh-ok); }
+  .badge.local { color: var(--vsh-muted); }
   .badge.ok { color: var(--vsh-ok); }
   .badge.warn { color: var(--vsh-warn); }
   .fields { display: flex; gap: 6px; margin: 8px 0; }

@@ -35,7 +35,7 @@ const webview = {
 };
 
 /** @type {import('esbuild').BuildOptions} */
-const endpointsPanel = {
+const endpoints = {
   ...shared,
   entryPoints: ['src/views/media/endpoints.ts'],
   outfile: 'dist/media/endpoints.js',
@@ -45,7 +45,7 @@ const endpointsPanel = {
 
 const ctxExt = await esbuild.context(extension);
 const ctxWeb = await esbuild.context(webview);
-const ctxEnd = await esbuild.context(endpointsPanel);
+const ctxEnd = await esbuild.context(endpoints);
 
 if (watch) {
   await Promise.all([ctxExt.watch(), ctxWeb.watch(), ctxEnd.watch()]);

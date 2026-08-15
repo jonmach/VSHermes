@@ -36,7 +36,27 @@ describe('checkSync', () => {
     const r = checkSync(HEALTH, caps, MANIFEST, '0.1.0');
     expect(r.status).toBe('outdated');
     expect(r.missingRequiredFeatures).toContain('session_chat_streaming');
-    expect(r.messages.join(' ')).toContain('missing capabilities');
+    expect(r.messages.join(' ')).toContain('1 of 15 features');
+    expect(r.messages.join(' ')).toContain('Upgrade Hermes to');
+  });
+
+  it('describes missing features inline when few are missing', () => {
+    const caps = capsWith({ features: { session_chat_streaming: false } });
+    const r = checkSync(HEALTH, caps, MANIFEST, '0.1.0');
+    expect(r.messages.join(' ')).toContain('session_chat_streaming (Streaming session chat)');
+  });
+
+  it('keeps the banner compact but lists descriptions for many missing features', () => {
+    const caps = capsWith({
+      features: Object.fromEntries(MANIFEST.requiredFeatures.slice(0, 6).map((f) => [f, false])),
+    });
+    const r = checkSync(HEALTH, caps, MANIFEST, '0.1.0');
+    expect(r.status).toBe('outdated');
+    // Banner line: bare names, no inline descriptions…
+    expect(r.messages[0]).not.toContain('(');
+    // …and a second message carries the described list for the tooltip.
+    expect(r.messages[1]).toContain('Full list:');
+    expect(r.messages[1]).toContain('(Streaming chat completions)');
   });
 
   it('reports outdated when a required endpoint is missing', () => {
@@ -46,11 +66,11 @@ describe('checkSync', () => {
     expect(r.missingRequiredEndpoints).toContain('session_chat_stream');
   });
 
-  it('reports outdated when Hermes version is below the minimum', () => {
+  it('reports untested when the version is below the minimum but nothing is missing', () => {
     const r = checkSync({ ...HEALTH, version: '0.18.0' }, MOCK_CAPABILITIES, MANIFEST, '0.1.0');
-    expect(r.status).toBe('outdated');
+    expect(r.status).toBe('untested');
     expect(r.versionCompare).toBe(-1);
-    expect(r.messages.join(' ')).toContain('older than the minimum');
+    expect(r.messages.join(' ')).toContain('all required features are present');
   });
 
   it('reports ahead when Hermes advertises unknown features', () => {

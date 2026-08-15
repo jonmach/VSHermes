@@ -37,7 +37,7 @@ import {
   setActiveEndpoint,
   setEndpointApiKey,
 } from './config';
-import { canonicalUrl, isRemoteUrl, LOCAL_ENDPOINT_ID, makeEndpointId, normalizeUrl } from './endpointCore';
+import { canonicalUrl, hostLabel, isRemoteUrl, LOCAL_ENDPOINT_ID, makeEndpointId, normalizeUrl } from './endpointCore';
 import { SLASH_COMMANDS, SlashHandlerId } from './slash/commands';
 import { currentServerTarget, sessionTargetFromArg, type SessionTarget } from './sessionArg';
 import { StatusBar } from './statusbar';
@@ -48,9 +48,9 @@ import { messagesToMarkdown } from './exportMarkdown';
 import { enrichImageRefs } from './imageRefs';
 import { ChatViewProvider } from './views/chatProvider';
 import { HistoryProvider } from './views/historyProvider';
-import { EndpointsPanel } from './endpointsPanel';
-import type { FileEntry, HostMessage, WebviewMessage } from './views/media/protocol';
+import { EndpointsViewProvider } from './endpointsPanel';
 import type { EndpointsWebviewMessage } from './views/media/protocol';
+import type { FileEntry, HostMessage, WebviewMessage } from './views/media/protocol';
 
 export function activate(context: vscode.ExtensionContext): VSHermes {
   return new VSHermes(context);
@@ -61,7 +61,7 @@ class VSHermes {
   readonly statusBar: StatusBar;
   readonly view: ChatViewProvider;
   readonly history: HistoryProvider;
-  readonly endpointsPanel: EndpointsPanel;
+  readonly endpoints: EndpointsViewProvider;
 
   private client: HermesClient | null = null;
   private sessionId: string | null = null;
@@ -73,8 +73,6 @@ class VSHermes {
   /** Base URL the current session was established against — endpoint
    *  switches that change it reset the session (server-scoped ids). */
   private lastBaseUrl: string | null = null;
-  /** The "/help" welcome posts once per activation, not per reconnect. */
-  private welcomed = false;
   /** Signature of the last transcript snapshot posted to the webview —
    *  the polling loop only re-posts when the session's messages changed. */
   private lastTranscriptSig: {
@@ -105,14 +103,17 @@ class VSHermes {
       endpointRemote: (url) => isRemoteUrl(url),
       endpointIdForUrl: (url) => this.endpointForUrl(url).id,
     });
-    this.endpointsPanel = new EndpointsPanel(context.extensionUri);
+    this.endpoints = new EndpointsViewProvider(context.extensionUri);
 
     context.subscriptions.push(
       this.statusBar,
       this.view,
-      this.endpointsPanel,
+      this.endpoints,
       this.log,
       vscode.window.registerWebviewViewProvider('vsh.hermes.chat', this.view, {
+        webviewOptions: { retainContextWhenHidden: true },
+      }),
+      vscode.window.registerWebviewViewProvider('vsh.hermes.endpoints', this.endpoints, {
         webviewOptions: { retainContextWhenHidden: true },
       }),
       vscode.window.createTreeView('vsh.hermes.history', {
@@ -120,7 +121,7 @@ class VSHermes {
         showCollapseAll: false,
       }),
       this.view.onDidReceiveMessage((msg) => void this.handleWebviewMessage(msg)),
-      this.endpointsPanel.onDidReceiveMessage((msg) => void this.handleEndpointMessage(msg)),
+      this.endpoints.onDidReceiveMessage((msg) => void this.handleEndpointMessage(msg)),
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (
           e.affectsConfiguration('vsh.hermes.baseUrl') ||
@@ -157,7 +158,7 @@ class VSHermes {
       vscode.commands.registerCommand('vsh.hermes.searchHistory', () => void this.searchHistory()),
       vscode.commands.registerCommand('vsh.hermes.copyConversation', () => void this.copyConversation()),
       vscode.commands.registerCommand('vsh.hermes.attachFiles', () => void this.attachFiles()),
-      vscode.commands.registerCommand('vsh.hermes.endpoints', () => this.endpointsPanel.toggle()),
+      vscode.commands.registerCommand('vsh.hermes.endpoints', () => this.focusEndpoints()),
     );
 
     this.statusBar.connecting();
@@ -200,16 +201,15 @@ class VSHermes {
       const c = await this.ensureClient();
       this.health = await c.health();
       this.caps = await c.capabilities();
-      this.statusBar.connected(this.health.version, this.caps.model);
+      this.statusBar.connected(this.pluginVersion, this.health.version, this.caps.model, getBaseUrl());
       this.logInfo(`connected to Hermes ${this.health.version} at ${getBaseUrl()}`);
       // The webview flipped to "offline" the moment a switch started
       // (client was nulled); a successful connect must push connected:true
       // or the badge stays stale until a health-poll transition.
       this.view.post(this.chatState());
-      if (getCheckSyncOnStartup() && !this.welcomed) {
-        this.welcomed = true;
-        this.view.postInfo(`Connected to Hermes ${this.health.version}. Type /help for commands.`);
-      }
+      // Same rule for the Endpoints panel — its status line reads off
+      // this.health, so every flip must reach it in both directions.
+      void this.refreshEndpointsPanel();
     } catch (err) {
       this.health = null;
       this.caps = null;
@@ -224,6 +224,7 @@ class VSHermes {
           : msg,
       });
       this.view.post(this.chatState());
+      void this.refreshEndpointsPanel();
       return;
     }
     await this.runSyncCheck(false);
@@ -232,6 +233,7 @@ class VSHermes {
 
   /** Full chat state snapshot (ready + every endpoint/connection change). */
   private chatState(): Extract<HostMessage, { type: 'state' }> {
+    this.refreshChatTitle();
     return {
       type: 'state',
       connected: this.isConnected,
@@ -247,7 +249,31 @@ class VSHermes {
     };
   }
 
-  // ── endpoints panel ──────────────────────────────────────────────
+  /** Keep the chat tab label in sync with the active server:
+   *  "Chat (Docker — remote)" — profile name, "Chat (Local)" for the
+   *  legacy connection (the built-in Local row's Activate posts
+   *  setActive:null, so there is never an active 'local' profile id),
+   *  hostname only for a genuinely remote profile-less URL.
+   *  The title follows the SERVER, not the connection state: it stays
+   *  put while offline, and only changes on endpoint switches. */
+  private refreshChatTitle(): void {
+    const active = getActiveEndpoint();
+    let label: string;
+    if (active) {
+      label = active.name;
+    } else {
+      const host = hostLabel(getBaseUrl());
+      label = host !== '' && !isRemoteUrl(getBaseUrl()) ? 'Local' : host;
+    }
+    this.view.setTitle(label ? `Chat (${label})` : 'Chat');
+  }
+
+  // ── endpoints view (sidebar webview) ─────────────────────────────
+
+  /** Reveal the Endpoints view (the tab is the door). */
+  private focusEndpoints(): void {
+    void vscode.commands.executeCommand('vsh.hermes.endpoints.focus');
+  }
 
   private async handleEndpointMessage(msg: EndpointsWebviewMessage): Promise<void> {
     try {
@@ -256,18 +282,18 @@ class VSHermes {
           await this.refreshEndpointsPanel();
           break;
         case 'diag':
-          this.logInfo(`endpoints panel [${msg.level}]: ${msg.message}`);
+          this.logInfo(`endpoints view [${msg.level}]: ${msg.message}`);
           if (msg.level === 'error') {
-            this.endpointsPanel.post({
+            this.endpoints.post({
               type: 'note',
-              text: `Panel script error: ${msg.message}`,
+              text: `View script error: ${msg.message}`,
             });
           }
           break;
         case 'add': {
           const url = normalizeUrl(msg.url);
           if (!url) {
-            this.endpointsPanel.post({
+            this.endpoints.post({
               type: 'note',
               text: `Invalid URL "${msg.url}" — include http:// or https://`,
             });
@@ -278,7 +304,7 @@ class VSHermes {
           try {
             await saveEndpoints(endpoints);
           } catch (err) {
-            this.endpointsPanel.post({ type: 'note', text: `Could not save endpoint: ${(err as Error).message}` });
+            this.endpoints.post({ type: 'note', text: `Could not save endpoint: ${(err as Error).message}` });
             break;
           }
           this.afterEndpointsChanged();
@@ -287,7 +313,7 @@ class VSHermes {
         case 'update': {
           const url = normalizeUrl(msg.url);
           if (!url) {
-            this.endpointsPanel.post({ type: 'note', text: `Invalid URL "${msg.url}" — include http:// or https://` });
+            this.endpoints.post({ type: 'note', text: `Invalid URL "${msg.url}" — include http:// or https://` });
             break;
           }
           try {
@@ -295,7 +321,7 @@ class VSHermes {
               getEndpoints().map((e) => (e.id === msg.id ? { ...e, name: msg.name.trim(), url } : e)),
             );
           } catch (err) {
-            this.endpointsPanel.post({ type: 'note', text: `Could not save endpoint: ${(err as Error).message}` });
+            this.endpoints.post({ type: 'note', text: `Could not save endpoint: ${(err as Error).message}` });
             break;
           }
           this.afterEndpointsChanged();
@@ -332,7 +358,7 @@ class VSHermes {
       }
     } catch (err) {
       this.logInfo(`endpoint message failed: ${(err as Error).message}`);
-      this.endpointsPanel.post({
+      this.endpoints.post({
         type: 'note',
         text: `Endpoint action failed: ${(err as Error).message}`,
       });
@@ -340,7 +366,7 @@ class VSHermes {
   }
 
   /** Endpoint store changed → reconnect and refresh every surface (chat
-   *  state incl. the remote flag, panel). */
+   *  state incl. the remote flag, endpoints view). */
   private afterEndpointsChanged(): void {
     this.noteEndpointChange();
     this.client = null;
@@ -388,13 +414,13 @@ class VSHermes {
     // Activate button and auto-switch on session open alike).
     if (isRemoteUrl(url) && !(await getKeyForEndpoint(this.context, profile, url))) {
       const label = profile?.name ?? 'this remote server';
-      this.endpointsPanel.post({
+      this.endpoints.post({
         type: 'note',
-        text: `Cannot activate ${label} — remote endpoints require the server's API_SERVER_KEY (set it above and Save key).`,
+        text: `Cannot activate ${label} — remote endpoints require the server's API_SERVER_KEY (set it in the key field and save).`,
       });
       this.view.post({
         type: 'error',
-        message: `Cannot activate ${label}: remote endpoints require the server's API_SERVER_KEY — set it in the Endpoints panel first.`,
+        message: `Cannot activate ${label}: remote endpoints require the server's API_SERVER_KEY — set it in the Endpoints view first.`,
       });
       return false;
     }
@@ -428,12 +454,13 @@ class VSHermes {
     await this.context.globalState.update('vsh.hermes.sessionsByEndpoint', cache);
   }
 
+  /** Push the current endpoint store state to the endpoints view. */
   private async refreshEndpointsPanel(): Promise<void> {
     const keySet: string[] = [];
     for (const ep of getEndpoints()) {
       if (await getEndpointApiKey(this.context, ep.id)) keySet.push(ep.id);
     }
-    this.endpointsPanel.post({
+    this.endpoints.post({
       type: 'state',
       endpoints: getEndpoints(),
       activeId: getActiveEndpoint()?.id ?? null,
@@ -460,11 +487,11 @@ class VSHermes {
       // Remote endpoints require a key — never report a keyless remote
       // connection as OK, and never let it pass as "no API key required".
       if (isRemoteUrl(ep.url) && !key) {
-        this.endpointsPanel.post({
+        this.endpoints.post({
           type: 'testResult',
           id,
           ok: false,
-          detail: 'Remote endpoints require the server\'s API_SERVER_KEY — set it above and Save key',
+          detail: 'Remote endpoints require the server\'s API_SERVER_KEY — set it in the key field and save',
         });
         return;
       }
@@ -474,7 +501,7 @@ class VSHermes {
       });
       const body = (await res.json()) as { status?: string; version?: string };
       if (!(res.ok && body.status === 'ok')) {
-        this.endpointsPanel.post({
+        this.endpoints.post({
           type: 'testResult',
           id,
           ok: false,
@@ -493,21 +520,21 @@ class VSHermes {
         // Only a loopback (local) server may be keyless; remote is
         // compulsory, so a remote profile always has a key here.
         const note = !isRemoteUrl(ep.url) && !key ? ' (no API key required)' : ' (key valid)';
-        this.endpointsPanel.post({
+        this.endpoints.post({
           type: 'testResult',
           id,
           ok: true,
           detail: `OK — Hermes ${body.version ?? '?'} at ${ep.url}${note}`,
         });
       } else if (auth.status === 401 || auth.status === 403) {
-        this.endpointsPanel.post({
+        this.endpoints.post({
           type: 'testResult',
           id,
           ok: false,
-          detail: `Reachable, but the API key is missing or wrong (HTTP ${auth.status}) — enter it above and Save key`,
+          detail: `Reachable, but the API key is missing or wrong (HTTP ${auth.status}) — set it in the key field and save`,
         });
       } else {
-        this.endpointsPanel.post({
+        this.endpoints.post({
           type: 'testResult',
           id,
           ok: false,
@@ -515,7 +542,7 @@ class VSHermes {
         });
       }
     } catch (err) {
-      this.endpointsPanel.post({
+      this.endpoints.post({
         type: 'testResult',
         id,
         ok: false,
@@ -542,7 +569,7 @@ class VSHermes {
         // Gateway came back — refresh capabilities, sync and the UI.
         this.health = h;
         this.caps = await c.capabilities();
-        this.statusBar.connected(h.version, this.caps.model);
+        this.statusBar.connected(this.pluginVersion, h.version, this.caps.model, getBaseUrl());
         await this.runSyncCheck(true);
         void this.listSessions();
         let model: string | null = this.caps.model ?? null;
@@ -556,6 +583,7 @@ class VSHermes {
           maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension(),
         });
         this.view.postInfo('Reconnected to Hermes.');
+        void this.refreshEndpointsPanel();
       } else {
         this.health = h;
       }
@@ -568,6 +596,7 @@ class VSHermes {
           sessionId: this.sessionId, model: null, sessions: [], slashCommands: SLASH_COMMANDS,
           maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension(),
         });
+        void this.refreshEndpointsPanel();
       }
     }
   }
@@ -791,15 +820,15 @@ class VSHermes {
             'Keyless remote connections are not allowed.',
         );
       }
-      const prompted = await promptForApiKey(this.context);
-      if (!prompted) {
-        throw new Error(
-          'No API key configured — checked SecretStorage, VSHERMES_API_KEY and the Hermes .env. ' +
-            'Run "VSHermes: Set API Key" to provide API_SERVER_KEY manually.',
-        );
-      }
-      this.logInfo('API key provided via prompt (stored in SecretStorage).');
-      this.client = new HermesClient(baseUrl, prompted);
+      // Loopback with no key: probe the server BEFORE blaming the missing
+      // credential. If nothing is listening, the real problem is "no
+      // gateway", not "no key" — the HermesApiError('connection_failed')
+      // from the probe is what doConnectAndSync renders as
+      // "Cannot reach Hermes at … — is the gateway running?".
+      const probe = new HermesClient(baseUrl, '');
+      await probe.health();
+      this.logInfo('No API key resolved — connecting keyless to loopback Hermes.');
+      this.client = probe;
       return this.client;
     }
     const envFile = source === 'hermes-env' ? resolveHermesEnv()?.envFile : undefined;
@@ -821,6 +850,20 @@ class VSHermes {
       return;
     }
     if (pick === 'Set new API key' || pick === undefined) {
+      // A key is only useful against a server that exists — and a missing
+      // key was never the problem when nothing is listening. For a
+      // loopback target, probe /health first and skip the prompt entirely
+      // when there's no instance (the key is irrelevant to that failure).
+      if (!isRemoteUrl(getBaseUrl())) {
+        try {
+          await new HermesClient(getBaseUrl(), '').health();
+        } catch {
+          void vscode.window.showWarningMessage(
+            `No Hermes instance detected at ${getBaseUrl()} — start the gateway first: hermes gateway run`,
+          );
+          return;
+        }
+      }
       const key = await promptForApiKey(this.context);
       if (key) {
         this.client = null;
@@ -855,7 +898,12 @@ class VSHermes {
       await this.context.workspaceState.update('vsh.hermes.syncReport', report);
       this.applySyncReport();
     } catch (err) {
-      this.view.post({ type: 'error', message: `Sync check failed: ${(err as Error).message}` });
+      // Never leave a stale report on screen — flip to an honest
+      // "unreachable" state so the banner stops claiming things work.
+      this.syncReport = checkSync(null, null, MANIFEST, this.pluginVersion);
+      await this.context.workspaceState.update('vsh.hermes.syncReport', this.syncReport);
+      this.applySyncReport();
+      this.logInfo(`sync check failed: ${(err as Error).message} — report set to unknown`);
     }
   }
 
@@ -863,27 +911,35 @@ class VSHermes {
     const r = this.syncReport;
     if (!r) return;
     if (r.status === 'outdated') {
-      this.statusBar.syncWarning(r.messages.join(' '));
-    } else if (r.status === 'ok' || r.status === 'ahead') {
-      this.statusBar.connected(this.health?.version ?? r.hermesVersion, this.caps?.model ?? null);
+      const nFeat = r.missingRequiredFeatures.length;
+      const nEp = r.missingRequiredEndpoints.length;
+      const host = r.hermesVersion ? `Hermes ${r.hermesVersion}` : 'Hermes';
+      const short =
+        nFeat > 0 && nEp > 0
+          ? `${host} — ${nFeat} features, ${nEp} endpoints missing`
+          : nFeat > 0
+            ? `${host} — ${nFeat} features missing`
+            : `${host} — ${nEp} endpoints missing`;
+      this.statusBar.syncWarning(short, r.messages.join(' '));
+    } else {
+      this.statusBar.connected(this.pluginVersion, this.health?.version ?? r.hermesVersion, this.caps?.model ?? null, getBaseUrl());
     }
     this.logInfo(`sync check: ${r.status} — ${r.messages.join(' ')}`);
     this.view.post({ type: 'sync', report: r });
   }
 
-  /** Visible feedback for the Check Sync command — silent success was a UX gap. */
+  /** Visible feedback for the Compatibility Check command — silent success was a UX gap. */
   private async notifySyncResult(): Promise<void> {
     const r = this.syncReport;
     if (!r) return;
-    const hermes = r.hermesVersion ? `Hermes ${r.hermesVersion}` : 'Hermes';
     if (r.status === 'ok') {
-      await vscode.window.showInformationMessage(`VSHermes ${r.pluginVersion} is in sync with ${hermes}.`);
+      await vscode.window.showInformationMessage(`VSHermes ${r.pluginVersion} works fully with Hermes ${r.hermesVersion ?? ''}.`);
+    } else if (r.status === 'ahead' || r.status === 'untested') {
+      await vscode.window.showInformationMessage(r.messages[0] ?? 'Hermes and VSHermes are compatible.');
     } else if (r.status === 'outdated') {
-      await vscode.window.showWarningMessage(`VSHermes out of sync with ${hermes}: ${r.messages.join(' ')}`, 'Check details');
-    } else if (r.status === 'ahead') {
-      await vscode.window.showInformationMessage(`VSHermes is older than ${hermes}: ${r.messages.join(' ')}`);
+      await vscode.window.showWarningMessage(`⚠ ${r.messages[0] ?? 'Some VSHermes features are unavailable on this Hermes.'}`);
     } else {
-      await vscode.window.showErrorMessage('VSHermes sync check failed: Hermes API server unreachable.');
+      await vscode.window.showErrorMessage(r.messages[0] ?? 'Could not reach the Hermes API server to check compatibility.');
     }
   }
 
@@ -1345,6 +1401,62 @@ class VSHermes {
             SLASH_COMMANDS.map((c) => `/${c.name} — ${c.summary}`).join('\n'),
         );
         break;
+      case 'toolsets': {
+        try {
+          const c = await this.ensureClient();
+          const res = await c.listToolsets();
+          const lines = res.data.map((t) =>
+            `- ${t.name}: ${t.description}${t.enabled ? '' : ' (disabled)'}${t.configured ? '' : ' (not configured)'}`,
+          );
+          this.view.postInfo(`Toolsets (${res.data.length}):\n${lines.join('\n')}`);
+        } catch (err) {
+          this.reportError(err);
+        }
+        break;
+      }
+      case 'version':
+        this.view.postInfo(
+          `VSHermes ${this.pluginVersion} · Hermes ${this.health?.version ?? this.syncReport?.hermesVersion ?? 'unknown'}`,
+        );
+        break;
+      case 'reload': {
+        // Client-side equivalent of the TUI /reload: re-resolve the env
+        // chain (base URL + API key) and reconnect from scratch.
+        this.health = null;
+        this.caps = null;
+        this.client = null;
+        this.statusBar.connecting();
+        try {
+          await this.connectAndSync();
+          await this.runSyncCheck(true);
+          void this.listSessions();
+          this.view.postInfo('Reloaded server configuration and reconnected.');
+        } catch (err) {
+          this.reportError(err);
+        }
+        break;
+      }
+      case 'doctor': {
+        try {
+          const c = await this.ensureClient();
+          const d = await c.healthDetailed();
+          const checks = d.readiness?.checks ?? {};
+          const summary = Object.entries(checks)
+            .map(([k, v]) => `${k}: ${v.status}`)
+            .join(', ');
+          const gateway = checks.gateway;
+          const gwState = gateway?.state ?? d.gateway_state ?? 'unknown';
+          const disk = checks.disk && 'used_percent' in checks.disk ? ` · disk ${checks.disk.used_percent}% used` : '';
+          this.view.postInfo(
+            `Hermes ${d.version} — ${d.status}${disk}\n` +
+              `gateway: ${gwState} · ${d.active_agents ?? '?'} active agent(s)\n` +
+              `readiness: ${summary || 'no checks reported'}`,
+          );
+        } catch (err) {
+          this.reportError(err);
+        }
+        break;
+      }
     }
   }
 

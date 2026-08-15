@@ -67,3 +67,13 @@ export function endpointLabel(id: string | null, endpoints: EndpointProfile[]): 
   if (id === null || id === LOCAL_ENDPOINT_ID) return 'Local';
   return endpoints.find((e) => e.id === id)?.name ?? id;
 }
+
+/** Hostname of a URL (lowercased, no protocol/port) — the compact server
+ *  identity used in the chat tab title; '' when unparseable. */
+export function hostLabel(url: string): string {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}

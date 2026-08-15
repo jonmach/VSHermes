@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 /**
- * VSHermes standalone sync check — run outside VS Code:
+ * VSHermes standalone compatibility check — run outside VS Code:
  *
  *   node scripts/check-sync.mjs [--url http://127.0.0.1:8642] [--key <API_SERVER_KEY>]
  *
  * The key falls back to $VSHERMES_API_KEY, then $HERMES_HOME/.env, then
  * ~/.hermes/.env (API_SERVER_KEY). Prints the same verdict the plugin
- * shows in its status bar / banner.
+ * shows in its status bar / banner. The script name is kept stable
+ * (check-sync) for the same reason the command id stayed
+ * vsh.hermes.checkSync — it is a handle, not a label.
  *
  * NOTE: this script mirrors the manifest in src/api/sync.ts. When the
  * manifest changes there, update REQUIRED_FEATURES/REQUIRED_ENDPOINTS here.
@@ -14,9 +16,13 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const PLUGIN_VERSION = '0.1.0';
+const PACKAGE = JSON.parse(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8'),
+);
+const PLUGIN_VERSION = PACKAGE.version;
 const MIN_HERMES_VERSION = '0.20.0';
 const REQUIRED_FEATURES = [
   'chat_completions', 'chat_completions_streaming', 'run_submission',
@@ -100,23 +106,36 @@ async function main() {
     .filter(([k, v]) => typeof v === 'boolean' && v === true && !KNOWN_OPTIONAL.has(k) && !REQUIRED_FEATURES.includes(k))
     .map(([k]) => k);
   const vc = compareVersions(health.version, MIN_HERMES_VERSION);
+  const missingRequired = missingFeatures.length > 0 || missingEndpoints.length > 0;
 
   let status;
-  if (missingFeatures.length || missingEndpoints.length || vc === -1) status = 'OUTDATED';
+  if (missingRequired) status = 'OUTDATED';
+  else if (vc === -1) status = 'UNTESTED';
   else if (unknownFeatures.length) status = 'AHEAD';
   else status = 'OK';
 
-  console.log('VSHermes sync check');
-  console.log('──────────────────');
+  console.log('VSHermes compatibility check');
+  console.log('────────────────────────────');
   console.log(`plugin version : ${PLUGIN_VERSION}  (min verified Hermes ${MIN_HERMES_VERSION})`);
   console.log(`hermes version : ${health.version}`);
   console.log(`api server     : ${baseUrl}`);
   console.log(`verdict        : ${status}`);
-  if (vc === -1) console.log(`  ! Hermes ${health.version} is older than the minimum verified version`);
-  if (missingFeatures.length) console.log(`  ! missing required features: ${missingFeatures.join(', ')}`);
-  if (missingEndpoints.length) console.log(`  ! missing required endpoints: ${missingEndpoints.join(', ')}`);
-  if (unknownFeatures.length) console.log(`  i Hermes advertises unknown features (plugin behind): ${unknownFeatures.join(', ')}`);
-  if (status === 'OK') console.log('  aligned — no action needed');
+  if (missingFeatures.length) {
+    console.log(
+      `  ! Hermes ${health.version} — ${missingFeatures.length} of ${REQUIRED_FEATURES.length} features VSHermes needs are unavailable: ${missingFeatures.join(', ')}`,
+    );
+  }
+  if (missingEndpoints.length) {
+    console.log(`  ! ${missingEndpoints.length} of ${REQUIRED_ENDPOINTS.length} required endpoints missing: ${missingEndpoints.join(', ')}`);
+  }
+  if (missingRequired) console.log(`  Upgrade Hermes to ${MIN_HERMES_VERSION}+.`);
+  if (vc === -1 && !missingRequired) {
+    console.log(`  ! Hermes ${health.version} is below the verified minimum ${MIN_HERMES_VERSION} — all required features are present, but this combination is untested.`);
+  }
+  if (unknownFeatures.length) {
+    console.log(`  i Hermes advertises extra capabilities VSHermes does not use: ${unknownFeatures.join(', ')} — the plugin works normally.`);
+  }
+  if (status === 'OK') console.log(`  all VSHermes features are available on Hermes ${health.version}.`);
   process.exit(status === 'OUTDATED' ? 1 : 0);
 }
 

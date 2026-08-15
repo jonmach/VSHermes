@@ -19,7 +19,7 @@ const BUNDLE = join(__dirname, '..', 'dist', 'media', 'chat.js');
 
 const WEBVIEW_HTML = `<!DOCTYPE html><html><body>
   <div id="sync-banner"></div>
-  <div id="header"><span id="conn"></span><span class="spacer"></span><span id="model-badge"></span></div>
+  <div id="header"><span id="conn"></span><span class="spacer"></span></div>
   <div id="messages"></div>
   <div id="input-area">
     <div id="slash-popup"></div>

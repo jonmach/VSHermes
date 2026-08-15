@@ -68,4 +68,29 @@ describe('filterSlash', () => {
     expect(SLASH_COMMANDS.find((c) => c.name === 'status')?.kind).toBe('action');
     expect(SLASH_COMMANDS.find((c) => c.name === 'prompt')?.kind).toBe('unsupported');
   });
+
+  it('promotes API-backed commands to working actions', () => {
+    expect(SLASH_COMMANDS.find((c) => c.name === 'toolsets')?.kind).toBe('action');
+    expect(SLASH_COMMANDS.find((c) => c.name === 'toolsets')?.handler).toBe('toolsets');
+    expect(SLASH_COMMANDS.find((c) => c.name === 'version')?.handler).toBe('version');
+    expect(SLASH_COMMANDS.find((c) => c.name === 'reload')?.handler).toBe('reload');
+    expect(SLASH_COMMANDS.find((c) => c.name === 'doctor')?.handler).toBe('doctor');
+  });
+
+  it('reclassifies agent-workflow commands as informational (not sent to a dead end)', () => {
+    expect(SLASH_COMMANDS.find((c) => c.name === 'goal')?.kind).toBe('informational');
+    expect(SLASH_COMMANDS.find((c) => c.name === 'learn')?.kind).toBe('informational');
+  });
+
+  it('fixes the /export summary and drops the meaningless /quit', () => {
+    const exp = SLASH_COMMANDS.find((c) => c.name === 'export');
+    expect(exp?.kind).toBe('unsupported');
+    expect(exp?.summary).toContain('profile');
+    expect(SLASH_COMMANDS.find((c) => c.name === 'quit')).toBeUndefined();
+  });
+
+  it('points /paste and /image at the native attach surfaces', () => {
+    expect(SLASH_COMMANDS.find((c) => c.name === 'paste')?.summary).toContain('paste into the chat input');
+    expect(SLASH_COMMANDS.find((c) => c.name === 'image')?.summary).toContain('paperclip');
+  });
 });

@@ -2,7 +2,7 @@
  * Status bar item: connection state + sync warning + active model.
  *
  *   $(plug)  Hermes v0.20.0 — deepseek-v4-flash     (connected)
- *   $(warning) VSHermes out of sync — check         (sync problem)
+ *   $(warning) VSHermes incompatible — check      (compatibility problem)
  *   $(circle-slash) Hermes offline                  (not reachable)
  */
 
@@ -29,11 +29,11 @@ export class StatusBar {
     this.set('Connecting to Hermes…', 'VSHermes — connecting to the Hermes API server', 'sync~spin');
   }
 
-  connected(version: string | null, model: string | null): void {
+  connected(pluginVersion: string, version: string | null, model: string | null, url: string): void {
     const v = version ? `v${version}` : '?';
     this.set(
       `Hermes ${v}${model ? ` — ${model}` : ''}`,
-      `VSHermes — connected to Hermes ${v}. Click to open the chat view.`,
+      `VSHermes ${pluginVersion} — connected to Hermes ${v} at ${url}. Click to open the chat view.`,
       'plug',
     );
   }
@@ -47,8 +47,8 @@ export class StatusBar {
     );
   }
 
-  syncWarning(summary: string): void {
-    this.set('VSHermes out of sync', summary, 'warning', new vscode.ThemeColor('charts.yellow'));
+  syncWarning(text: string, tooltip: string): void {
+    this.set(text, tooltip, 'warning', new vscode.ThemeColor('charts.yellow'));
   }
 
   dispose(): void {

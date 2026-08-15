@@ -106,7 +106,7 @@ export const MANIFEST: SyncManifest = {
   },
 };
 
-export type SyncStatus = 'ok' | 'outdated' | 'ahead' | 'unknown';
+export type SyncStatus = 'ok' | 'outdated' | 'ahead' | 'untested' | 'unknown';
 
 export interface SyncReport {
   status: SyncStatus;
@@ -157,7 +157,7 @@ export function checkSync(
   };
 
   if (!health || !caps) {
-    report.messages.push('Could not reach the Hermes API server to check sync.');
+    report.messages.push('Could not reach the Hermes API server to check compatibility.');
     return report;
   }
 
@@ -197,37 +197,51 @@ export function checkSync(
   if (missingRequired) {
     report.status = 'outdated';
   } else if (versionTooOld) {
-    report.status = 'outdated';
+    // Everything the plugin needs is present; the server is just below the
+    // version this plugin was verified against. It works, but is untested.
+    report.status = 'untested';
   } else if (report.unknownFeatures.length > 0) {
     report.status = 'ahead';
   } else {
     report.status = 'ok';
   }
 
-  // Human messages.
+  // Human messages (rendered by the banner, the toast and the status-bar
+  // tooltip). Wording is deliberately calm: the subject is the SERVER's
+  // missing capabilities, never "the plugin is incompatible".
   if (missingRequired) {
+    const showDescriptions = report.missingRequiredFeatures.length <= 3;
     const feats = report.missingRequiredFeatures
-      .map((f) => `${f}${manifest.featureDescriptions[f] ? ` (${manifest.featureDescriptions[f]})` : ''}`)
+      .map((f) => `${f}${showDescriptions && manifest.featureDescriptions[f] ? ` (${manifest.featureDescriptions[f]})` : ''}`)
       .join(', ');
     const eps = report.missingRequiredEndpoints.join(', ');
+    const scopes: string[] = [];
+    if (feats) scopes.push(`${report.missingRequiredFeatures.length} of ${manifest.requiredFeatures.length} features`);
+    if (eps) scopes.push(`${report.missingRequiredEndpoints.length} of ${manifest.requiredEndpoints.length} endpoints`);
+    const missing = [feats, eps].filter(Boolean).join(', ');
     report.messages.push(
-      `This Hermes is missing capabilities the plugin requires${
-        feats ? ` — features: ${feats}` : ''
-      }${eps ? ` — endpoints: ${eps}` : ''}. Upgrade Hermes or install an older VSHermes release.`,
+      `Hermes ${report.hermesVersion ?? ''} — ${scopes.join(' and ')} VSHermes needs are unavailable: ${missing}. Upgrade Hermes to ${manifest.minHermesVersion}+.`,
     );
+    // When the banner stays compact (>3 features), keep the described list
+    // for the status-bar tooltip.
+    if (!showDescriptions && report.missingRequiredFeatures.length > 0) {
+      const described = report.missingRequiredFeatures
+        .map((f) => `${f}${manifest.featureDescriptions[f] ? ` (${manifest.featureDescriptions[f]})` : ''}`)
+        .join(', ');
+      report.messages.push(`Full list: ${described}.`);
+    }
   } else if (versionTooOld) {
     report.messages.push(
-      `Hermes ${report.hermesVersion} is older than the minimum verified version ${manifest.minHermesVersion}. Upgrade Hermes for the full plugin surface.`,
+      `Hermes ${report.hermesVersion} is older than the version VSHermes ${pluginVersion} was verified against (${manifest.minHermesVersion}) — all required features are present, but this combination is untested.`,
     );
   }
   if (report.status === 'ahead') {
     report.messages.push(
-      `Hermes advertises capabilities this plugin does not know about yet: ${report.unknownFeatures.join(', ')}. ` +
-        `The plugin still works — a newer VSHermes may surface them.`,
+      `Hermes ${report.hermesVersion ?? ''} advertises extra capabilities VSHermes does not use: ${report.unknownFeatures.join(', ')}. The plugin works normally.`,
     );
   }
   if (report.status === 'ok' && report.hermesVersion) {
-    report.messages.push(`Aligned with Hermes ${report.hermesVersion}.`);
+    report.messages.push(`All VSHermes features are available on Hermes ${report.hermesVersion}.`);
   }
 
   return report;

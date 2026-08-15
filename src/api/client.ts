@@ -8,6 +8,7 @@ import type {
   ApprovalDecision,
   Capabilities,
   ChatMessage,
+  HealthDetailed,
   HealthStatus,
   MessagesResponse,
   ModelLockResponse,
@@ -110,11 +111,11 @@ export class HermesClient {
   // ── plumbing ─────────────────────────────────────────────────────
 
   private headers(extra?: Record<string, string>): Record<string, string> {
-    return {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${this.apiKey}`,
-      ...extra,
-    };
+    const h: Record<string, string> = { 'Content-Type': 'application/json', ...extra };
+    // Keyless clients (loopback with no resolved key) send no Authorization
+    // header at all — an empty `Bearer ` token is not the same as no key.
+    if (this.apiKey) h.Authorization = `Bearer ${this.apiKey}`;
+    return h;
   }
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -333,6 +334,11 @@ export class HermesClient {
 
   listToolsets(): Promise<{ data: ToolsetInfo[] }> {
     return this.request<{ data: ToolsetInfo[] }>('/v1/toolsets', { method: 'GET' });
+  }
+
+  /** Detailed server diagnostics (readiness checks, gateway state, disk). */
+  healthDetailed(): Promise<HealthDetailed> {
+    return this.request<HealthDetailed>('/health/detailed', { method: 'GET' });
   }
 }
 

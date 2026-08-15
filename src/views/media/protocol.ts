@@ -67,7 +67,7 @@ export type WebviewMessage =
 
 export type { ApprovalDecision, ChatMessage, MessagePart, SessionSummary, StreamEvent, SyncReport };
 
-// ── Endpoints panel (separate webview) ────────────────────────────
+// ── Endpoints view (sidebar webview) ───────────────────────────────
 
 export type EndpointsHostMessage =
   | {

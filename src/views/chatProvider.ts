@@ -37,6 +37,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     void this.view?.webview.postMessage(msg);
   }
 
+  /** Tab label for the chat view (e.g. "Chat (Docker — remote)"). */
+  setTitle(title: string): void {
+    if (this.view) this.view.title = title;
+  }
+
   /** Map an absolute local path to a webview-loadable URI, or null. */
   asImageUri(filePath: string): string | null {
     try {
@@ -102,7 +107,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     #sync-banner .msg { flex: 1; white-space: pre-wrap; }
     #sync-banner button { background: none; border: 1px solid var(--vsh-border); color: var(--vsh-fg); border-radius: 3px; cursor: pointer; padding: 2px 8px; }
     #header { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--vsh-border); }
-    #header .model-badge { font-size: 11px; color: var(--vsh-muted); border: 1px solid var(--vsh-border); border-radius: 8px; padding: 1px 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
     #header .spacer { flex: 1; }
     #header button { background: none; border: none; color: var(--vsh-fg); cursor: pointer; font-size: 14px; padding: 2px 4px; border-radius: 3px; }
     #header button:hover { background: var(--vsh-user-bubble); }
@@ -188,7 +192,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   <div id="header">
     <span id="conn"></span>
     <span class="spacer"></span>
-    <span id="model-badge" class="model-badge" title="Switch model"></span>
   </div>
   <div id="messages"></div>
   <div id="input-area">

@@ -18,7 +18,6 @@ const WEBVIEW_HTML = `<!DOCTYPE html><html><body>
   <div id="header">
     <span id="conn"></span>
     <span class="spacer"></span>
-    <span id="model-badge" class="model-badge"></span>
   </div>
   <div id="messages"></div>
   <div id="input-area">
@@ -140,6 +139,24 @@ describe('webview bundle (dist/media/chat.js)', () => {
     const conn = dom.window.document.getElementById('conn')!;
     expect(conn.textContent).toContain('Hermes');
     expect(dom.window.document.getElementById('no-session-hint')).not.toBeNull();
+  });
+
+  it('shows the connected server (host:port) in the header badge', () => {
+    const { dom, post } = bootWebview();
+    post({
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://10.0.0.5:8642',
+      syncReport: null,
+      sessionId: null,
+      model: 'hermes-agent',
+      sessions: [],
+      slashCommands: [],
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    });
+    const conn = dom.window.document.getElementById('conn')!;
+    expect(conn.textContent).toContain('10.0.0.5:8642');
   });
 
   it('removes the start hint once a session is active', () => {
@@ -551,12 +568,12 @@ describe('webview bundle (dist/media/chat.js)', () => {
         missingRequiredEndpoints: [],
         unknownFeatures: [],
         presentOptionalFeatures: [],
-        messages: ['Hermes is missing capabilities the plugin requires'],
+        messages: ['Hermes 0.18.0 — 1 of 15 features VSHermes needs are unavailable: session_chat_streaming. Upgrade Hermes to 0.20.0+.'],
       },
     });
     const banner = dom.window.document.getElementById('sync-banner')!;
     expect(banner.classList.contains('show')).toBe(true);
-    expect(banner.textContent).toContain('out of sync');
+    expect(banner.textContent).toContain('Upgrade Hermes to');
   });
 
   it('renders the sync banner for an OK report (visible confirmation)', () => {
@@ -580,7 +597,32 @@ describe('webview bundle (dist/media/chat.js)', () => {
     const banner = dom.window.document.getElementById('sync-banner')!;
     expect(banner.classList.contains('show')).toBe(true);
     expect(banner.classList.contains('ok')).toBe(true);
-    expect(banner.textContent).toContain('In sync with Hermes 0.20.0');
+    expect(banner.textContent).toContain('VSHermes 0.1.0 · Hermes 0.20.0');
+    expect(banner.textContent).not.toContain('all features available');
+  });
+
+  it('renders the sync banner green for an untested report (version below minimum, nothing missing)', () => {
+    const { dom, post } = bootWebview();
+    post({
+      type: 'sync',
+      report: {
+        status: 'untested',
+        checkedAt: Date.now(),
+        hermesVersion: '0.18.0',
+        pluginVersion: '0.1.0',
+        pluginMinVersion: '0.20.0',
+        versionCompare: -1,
+        missingRequiredFeatures: [],
+        missingRequiredEndpoints: [],
+        unknownFeatures: [],
+        presentOptionalFeatures: [],
+        messages: ['Hermes 0.18.0 is older than the version VSHermes 0.1.0 was verified against (0.20.0)'],
+      },
+    });
+    const banner = dom.window.document.getElementById('sync-banner')!;
+    expect(banner.classList.contains('show')).toBe(true);
+    expect(banner.classList.contains('ok')).toBe(true);
+    expect(banner.textContent).toContain('below the verified minimum');
   });
 
   it('open slash picker on / and select an action', () => {

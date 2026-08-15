@@ -64,7 +64,6 @@ const approvalEl = $('#approval');
 const approvalCmd = $('#approval-cmd');
 const syncBanner = $('#sync-banner');
 const connEl = $('#conn');
-const modelBadge = $('#model-badge');
 
 // ── state ──────────────────────────────────────────────────────────
 
@@ -87,7 +86,6 @@ interface RenderMsg {
 const state: {
   connected: boolean;
   sessionId: string | null;
-  model: string | null;
   remote: boolean;
   slashCommands: SlashCommandDef[];
   syncReport: SyncReport | null;
@@ -112,7 +110,6 @@ const state: {
 } = {
   connected: false,
   sessionId: null,
-  model: null,
   remote: false,
   slashCommands: [],
   syncReport: null,
@@ -398,6 +395,16 @@ function extractImages(content: string | null): string[] {
   return out.slice(0, 4);
 }
 
+/** Compact server identity for the header badge: hostname:port. */
+function serverHost(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.hostname.toLowerCase() + (u.port ? `:${u.port}` : '');
+  } catch {
+    return url;
+  }
+}
+
 // ── sync banner ────────────────────────────────────────────────────
 
 function renderSyncBanner(report: SyncReport | null): void {
@@ -411,19 +418,22 @@ function renderSyncBanner(report: SyncReport | null): void {
   btn.textContent = 'Re-check';
   btn.onclick = () => post({ type: 'checkSync' });
 
-  if (report.status === 'ok') {
-    const checked = new Date(report.checkedAt).toLocaleTimeString();
-    msg.textContent = `✓ In sync with Hermes ${report.hermesVersion ?? ''} — checked ${checked}`;
+  if (report.status === 'ok' || report.status === 'ahead' || report.status === 'untested') {
+    // Versions only when all is well — no scope-ambiguous claim like
+    // "all features available" (that could read as a claim about every
+    // Hermes feature). Explanatory text appears only in the other states.
+    let text = `✓ VSHermes ${report.pluginVersion} · Hermes ${report.hermesVersion ?? '?'}`;
+    if (report.status === 'untested') {
+      text += ` (below the verified minimum ${report.pluginMinVersion})`;
+    }
+    msg.textContent = text;
     syncBanner.classList.add('show', 'ok');
   } else if (report.status === 'unknown') {
-    msg.textContent = '? Could not reach Hermes for a sync check.';
-    syncBanner.classList.add('show', 'warn');
-  } else if (report.status === 'outdated') {
-    msg.textContent = '⚠ VSHermes is out of sync with Hermes: ' + report.messages.join(' ');
+    msg.textContent = '? ' + (report.messages[0] ?? 'Could not reach Hermes for a check.');
     syncBanner.classList.add('show', 'warn');
   } else {
-    msg.textContent = 'ℹ Hermes is newer than this plugin: ' + report.messages.join(' ');
-    syncBanner.classList.add('show');
+    msg.textContent = '⚠ ' + (report.messages[0] ?? 'Some VSHermes features are unavailable.');
+    syncBanner.classList.add('show', 'warn');
   }
   syncBanner.appendChild(msg);
   syncBanner.appendChild(btn);
@@ -813,7 +823,7 @@ function ensureNoSessionHint(): void {
   el.id = 'no-session-hint';
   el.className = 'info-note';
   el.textContent =
-    'No session yet — type a message below to start one. New chat, sync check and model live in the chat header + command palette (VSHermes: …).';
+    'No session yet — type a message below to start one. Type /help for commands.';
   messagesEl.appendChild(el);
   scrollBottom();
 }
@@ -836,14 +846,12 @@ function onHostMessage(msg: HostMessage): void {
         renderMessages([]);
       }
       state.sessionId = msg.sessionId;
-      state.model = msg.model;
       state.syncReport = msg.syncReport;
       state.maxImageBytes = msg.maxImageBytes;
       state.maxImageDimension = msg.maxImageDimension;
       if (msg.slashCommands.length > 0) state.slashCommands = msg.slashCommands;
-      connEl.textContent = msg.connected ? `● Hermes` : `○ offline (${msg.baseUrl})`;
+      connEl.textContent = msg.connected ? `● Hermes (${serverHost(msg.baseUrl)})` : `○ offline (${msg.baseUrl})`;
       connEl.style.color = msg.connected ? 'var(--vsh-accent)' : 'var(--vsh-error)';
-      modelBadge.textContent = msg.model ? `⚙ ${msg.model}` : '';
       if (msg.connected && !msg.sessionId) {
         ensureNoSessionHint();
       } else {
@@ -852,7 +860,7 @@ function onHostMessage(msg: HostMessage): void {
       renderSyncBanner(msg.syncReport);
       break;
     case 'session':
-      modelBadge.textContent = msg.session.model ? `⚙ ${msg.session.model}` : '';
+      // Session metadata — the model display moved to the status bar.
       break;
     case 'messages':
       renderMessages(msg.messages);
@@ -881,8 +889,7 @@ function onHostMessage(msg: HostMessage): void {
       addNote(msg.message, true);
       break;
     case 'model':
-      state.model = msg.model;
-      modelBadge.textContent = msg.model ? `⚙ ${msg.model}` : '';
+      // Model lock changes — the status bar reflects the active model.
       break;
     case 'fileResults':
       if (msg.query === state.fileQuery) {
@@ -1095,8 +1102,6 @@ sendBtn.addEventListener('click', () => {
     void sendNow();
   }
 });
-
-modelBadge.addEventListener('click', () => post({ type: 'chooseModel' }));
 
 // ── init ───────────────────────────────────────────────────────────
 

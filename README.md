@@ -1,6 +1,6 @@
 # VSHermes — Hermes Agent chat for VS Code
 
-> One product, current build 2.0.5 — each build re-verified
+> One product, current build 2.0.6 — each build re-verified
 > against the pinned Hermes API surface. This README describes current
 > functionality, not history (see CHANGELOG.md for the change log).
 
@@ -292,6 +292,21 @@ server's capabilities, never "the plugin is incompatible".
 
 Re-check anytime via the header icon, the `VSHermes: Compatibility Check`
 command, or `npm run check-sync` (standalone script).
+
+## Releasing
+
+Each release is a version bump + CHANGELOG entry + tag + GitHub release,
+kept in sync by `scripts/release.sh` (run on a clean tree, after the
+version commit):
+
+1. Bump `version` in `package.json`, add the matching
+   `## X.Y.Z (date)` section to `CHANGELOG.md`, and update the
+   "current build" line at the top of this README.
+2. Commit and push.
+3. `./scripts/release.sh` — tags `vX.Y.Z`, pushes the tag, creates the
+   GitHub release with the CHANGELOG section as notes, and attaches
+   `dist/vsh-hermes-X.Y.Z.vsix` when present. GitHub auth comes from the
+   system git credential helper (no token stored in the repo).
 
 ## Roadmap
 

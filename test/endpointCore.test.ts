@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error — dist/src/endpointCore.js exists after `npm run compile`
-import { canonicalUrl, endpointLabel, isRemoteUrl, LOCAL_ENDPOINT_ID, makeEndpointId, normalizeUrl } from '../dist/src/endpointCore';
+import { canonicalUrl, endpointLabel, hostLabel, isRemoteUrl, LOCAL_ENDPOINT_ID, makeEndpointId, normalizeUrl } from '../dist/src/endpointCore';
 
 describe('endpoint core (dist/src/endpointCore.js)', () => {
   it('treats loopback hosts as local', () => {
@@ -57,5 +57,14 @@ describe('endpoint core (dist/src/endpointCore.js)', () => {
     expect(endpointLabel(LOCAL_ENDPOINT_ID, endpoints)).toBe('Local');
     expect(endpointLabel('e1', endpoints)).toBe('Home server');
     expect(endpointLabel('missing', endpoints)).toBe('missing');
+  });
+
+  it('derives a compact host label for the chat tab title', () => {
+    expect(hostLabel('http://10.0.0.5:8642')).toBe('10.0.0.5');
+    expect(hostLabel('https://hermes.mythumb.com')).toBe('hermes.mythumb.com');
+    expect(hostLabel('http://127.0.0.1:8642')).toBe('127.0.0.1');
+    expect(hostLabel('HTTP://DOCKER-HOST:8642')).toBe('docker-host');
+    expect(hostLabel('not a url')).toBe('');
+    expect(hostLabel('')).toBe('');
   });
 });

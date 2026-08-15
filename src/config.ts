@@ -60,6 +60,10 @@ export async function setEndpointApiKey(
   await context.secrets.store(endpointSecretKey(id), key);
 }
 
+export async function clearEndpointApiKey(context: vscode.ExtensionContext, id: string): Promise<void> {
+  await context.secrets.delete(endpointSecretKey(id));
+}
+
 // ── effective values ──────────────────────────────────────────────
 
 /** The legacy (no-profile) resolution — what the built-in "Local

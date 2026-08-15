@@ -2,7 +2,7 @@
   "name": "vsh-hermes",
   "displayName": "VSHermes",
   "description": "Hermes Agent chat for VS Code — full agent UI (multiline input, image paste, slash commands, history, tool activity, approvals) over the Hermes API Server.",
-  "version": "2.0.4",
+  "version": "2.0.6",
   "publisher": "synapticity",
   "license": "MIT",
   "repository": {
@@ -50,6 +50,11 @@
           "type": "tree",
           "id": "vsh.hermes.history",
           "name": "History"
+        },
+        {
+          "type": "webview",
+          "id": "vsh.hermes.endpoints",
+          "name": "Endpoints"
         }
       ]
     },
@@ -88,8 +93,8 @@
       },
       {
         "command": "vsh.hermes.checkSync",
-        "title": "VSHermes: Check Hermes Sync",
-        "icon": "$(sync)"
+        "title": "VSHermes: Compatibility Check",
+        "icon": "$(verified)"
       },
       {
         "command": "vsh.hermes.setApiKey",
@@ -103,7 +108,7 @@
       {
         "command": "vsh.hermes.exportSession",
         "title": "VSHermes: Export Session as Markdown",
-        "icon": "$(export)"
+        "icon": "$(markdown)"
       },
       {
         "command": "vsh.hermes.copyConversation",
@@ -203,7 +208,7 @@
         "vsh.hermes.checkSyncOnStartup": {
           "type": "boolean",
           "default": true,
-          "description": "Run the Hermes sync check when the chat view opens."
+          "description": "Run the compatibility check when the chat view opens."
         },
         "vsh.hermes.maxImageBytes": {
           "type": "number",
@@ -229,7 +234,7 @@
     "watch": "node esbuild.mjs --watch",
     "test": "vitest run",
     "test:live": "VSHERMES_LIVE=1 vitest run test/live.integration.test.ts",
-    "package": "npm run compile && npx @vscode/vsce package",
+    "package": "npm run compile && npx @vscode/vsce package --out dist",
     "check-sync": "node scripts/check-sync.mjs"
   },
   "dependencies": {

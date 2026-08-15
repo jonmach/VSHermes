@@ -132,7 +132,10 @@ function renderLocalRow(): HTMLElement {
   const keyBadge = row.querySelector('.key-badge');
   if (keyBadge) {
     keyBadge.textContent = 'legacy key';
-    keyBadge.className = 'badge ok';
+    // Neutral mode label, not a verdict — local keys come from the legacy
+    // chain and are irrelevant to reachability (loopback is keyless-legal).
+    // Green here read as "all healthy" next to a dead gateway.
+    keyBadge.className = 'badge';
   }
   return row;
 }

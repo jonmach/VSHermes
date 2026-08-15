@@ -15,6 +15,21 @@ export interface HealthStatus {
   [key: string]: unknown;
 }
 
+/** GET /health/detailed — the surface behind /doctor. */
+export interface HealthDetailed {
+  status: string;
+  version: string;
+  pid?: number;
+  platform?: string;
+  gateway_state?: string;
+  active_agents?: number;
+  readiness?: {
+    status: string;
+    checks: Record<string, { status: string; used_percent?: number; free_bytes?: number; state?: string; connected_platforms?: number; platforms?: number; [k: string]: unknown }>;
+  };
+  [key: string]: unknown;
+}
+
 // ── Capabilities (GET /v1/capabilities) ────────────────────────────
 
 export interface CapabilityAuth {
