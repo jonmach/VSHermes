@@ -27,6 +27,23 @@
   `$(comment-discussion)` (speech bubble) for Chat, `$(history)` (clock) for
   History, and `$(server)` for Endpoints — the same glyph as the chat
   title-bar Endpoints button.
+- **Chat header: Refresh History → Show History** — the chat tab's title bar
+  now carries a clock "Show History" icon that opens the History tab (same
+  pattern as the Endpoints icon); the refresh action moved to the History
+  tab's own title bar, where it belongs. Both commands stay in the palette.
+- **Pasted-image thumbnails survive transcript reloads** — a pasted image
+  showed a thumbnail at send time, but the next post-run refresh rebuilt the
+  message from stored history and replaced the thumbnail with raw markdown
+  image text (`![Image](…)`). User messages now render file-mode image
+  references and inline base64 data URLs as thumbnails and keep them out of
+  the bubble text (Copy copies the clean text); image-only messages render
+  as a thumbnail with no empty bubble.
+- **Approval dialogs no longer go stale** — the approval prompt closes with
+  a note when the run ends (timeout, stop, session switch) instead of
+  lingering until clicked; only `approval.request` opens it (a response
+  event can no longer re-show it with the raw payload); and clicking an
+  approval that already timed out or was resolved elsewhere shows a plain
+  "no longer active" note instead of a raw API error.
 
 ## 2.0.6 (2026-08-14)
 

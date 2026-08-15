@@ -13,9 +13,9 @@ model switching.
 ## Screenshots
 
 ![VSHermes chat connected to a Hermes server — the tab title shows the active
-server, the compatibility banner carries both versions, the History tree
-groups sessions per server, the Endpoints tab holds the connection forms,
-and the @file picker attaches files](images/chat1.png)
+server (Chat (Local)), the compatibility banner sits above the transcript,
+the History tree lists sessions, and the Endpoints tab holds the connection
+forms](images/chat1.png)
 
 ## Features
 
@@ -128,8 +128,9 @@ chat title-bar icon / "VSHermes: Endpoints…" — both reveal the tab)
 - Terminal (CLI) sessions open with full history — one pool of sessions
 
 **Actions & navigation**
-- Chat header icons: New Chat, Compatibility Check, Switch Model, Refresh History,
-  Export as Markdown, Copy Conversation
+- Chat header icons: New Chat, Compatibility Check, Switch Model, Show History
+  (opens the History tab), Export as Markdown, Copy Conversation, Endpoints
+  (opens the Endpoints tab) — plus Refresh History on the History tab's header
 - Every action also in the command palette (`VSHermes: …`), incl. Set API Key
   and **Search History** (filters the history tree by title / id / model /
   source; empty input clears)

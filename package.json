@@ -73,7 +73,8 @@
       },
       {
         "command": "vsh.hermes.openHistory",
-        "title": "VSHermes: Show History"
+        "title": "VSHermes: Show History",
+        "icon": "$(history)"
       },
       {
         "command": "vsh.hermes.refreshSessions",
@@ -152,8 +153,13 @@
           "group": "navigation"
         },
         {
-          "command": "vsh.hermes.refreshSessions",
+          "command": "vsh.hermes.openHistory",
           "when": "view == vsh.hermes.chat",
+          "group": "navigation"
+        },
+        {
+          "command": "vsh.hermes.refreshSessions",
+          "when": "view == vsh.hermes.history",
           "group": "navigation"
         },
         {

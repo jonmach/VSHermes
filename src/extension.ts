@@ -1257,6 +1257,16 @@ class VSHermes {
       await c.approveRun(runId, decision);
       this.view.postInfo(`Approval resolved: ${decision}.`);
     } catch (err) {
+      // A timed-out or already-resolved approval fails with 409 (no pending
+      // approval) or 404 (run gone, e.g. gateway restart). The click is
+      // simply too late — say so plainly instead of surfacing the raw API
+      // error, which reads as a system failure.
+      if (err instanceof HermesApiError && (err.status === 409 || err.status === 404)) {
+        this.view.postInfo(
+          'This approval is no longer active — it timed out or was already resolved.',
+        );
+        return;
+      }
       this.reportError(err);
     }
   }

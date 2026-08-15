@@ -236,14 +236,16 @@ function addUserMessage(text: string, images: string[]): RenderMsg {
     }
     wrap.appendChild(imgs);
   }
-  const bubble = document.createElement('div');
-  bubble.className = 'bubble';
-  if (text.trim()) bubble.textContent = text;
-  const row = document.createElement('div');
-  row.className = 'bubble-row';
-  row.appendChild(bubble);
-  row.appendChild(makeCopyButton('Copy message', () => text));
-  wrap.appendChild(row);
+  if (text.trim()) {
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.textContent = text;
+    const row = document.createElement('div');
+    row.className = 'bubble-row';
+    row.appendChild(bubble);
+    row.appendChild(makeCopyButton('Copy message', () => text));
+    wrap.appendChild(row);
+  }
   messagesEl.appendChild(wrap);
   const msg: RenderMsg = { el: wrap, kind: 'user', tools: new Map() };
   state.messages.push(msg);
@@ -407,8 +409,12 @@ function renderMessages(messages: ChatMessage[]): void {
 
   for (const m of messages) {
     if (m.role === 'user') {
-      const msg = addUserMessage(m.content ?? '', extractImages(m.content));
-      msg.el.querySelector('.bubble')!.textContent = m.content ?? '';
+      const content = m.content ?? '';
+      const images = [...extractImages(content), ...extractMarkdownImages(content)].slice(0, 4);
+      const text = stripImageTokens(content);
+      const msg = addUserMessage(text, images);
+      const bubble = msg.el.querySelector('.bubble');
+      if (bubble) bubble.textContent = text;
     } else if (m.role === 'assistant') {
       const msg = addAssistantMessage();
       msg.content = m.content ?? '';
@@ -466,6 +472,31 @@ function extractImages(content: string | null): string[] {
     if (m[0].length > 100) out.push(m[0]);
   }
   return out.slice(0, 4);
+}
+
+/**
+ * Enriched file-mode image tokens — "![Image](<webview uri>)" — produced
+ * host-side by enrichImageRefs from stored "[Image pasted: …]" references.
+ * The webview can load those URIs (localResourceRoots + CSP img-src), so
+ * they render as thumbnails exactly like inline data URLs.
+ */
+const MARKDOWN_IMG_RE = /!\[Image\]\(([^)]+)\)/g;
+
+function extractMarkdownImages(content: string): string[] {
+  const out: string[] = [];
+  for (const m of content.matchAll(MARKDOWN_IMG_RE)) out.push(m[1]);
+  return out.slice(0, 4);
+}
+
+/** Strip image tokens (markdown image refs + base64 data URLs) from the text
+ * shown in the bubble — the image itself renders as a thumbnail, never as
+ * raw mime text in the message body. */
+function stripImageTokens(content: string): string {
+  return content
+    .replace(MARKDOWN_IMG_RE, '')
+    .replace(/data:image\/[a-zA-Z+]+;base64,[A-Za-z0-9+/=]+/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 /** Compact server identity for the header badge: hostname:port. */
@@ -581,16 +612,19 @@ function onStreamEvent(ev: StreamEvent): void {
           if (idx >= 0) state.usageByTurn.set(idx, ev.usage);
         }
       }
+      dismissStaleApproval();
       break;
     case 'done':
       state.streaming = false;
       updateRunUi();
+      dismissStaleApproval();
       break;
-    default:
-      if (ev.type.startsWith('approval.')) {
-        state.approval = ev;
-        showApproval(ev);
-      }
+    case 'approval.request':
+      state.approval = ev;
+      showApproval(ev);
+      break;
+    // Only approval.request opens the dialog — a response event
+    // (approval.responded) must not re-show it with the response payload.
   }
 }
 
@@ -617,6 +651,16 @@ function showApproval(ev: unknown): void {
 function hideApproval(): void {
   approvalEl.classList.remove('show');
   state.approval = null;
+}
+
+/** The run ended (or its stream closed) while an approval was still pending.
+ * Server-side the deadline may have expired or the run was aborted — either
+ * way the pending approval can no longer be answered, so close the dialog
+ * instead of leaving it stuck (clicking it would fail against a dead run). */
+function dismissStaleApproval(): void {
+  if (!state.approval) return;
+  hideApproval();
+  addNote('The run ended — the pending approval is no longer active.');
 }
 
 approvalEl.querySelectorAll('button[data-d]').forEach((btn) => {
@@ -966,6 +1010,7 @@ function onHostMessage(msg: HostMessage): void {
       state.streaming = false;
       updateRunUi();
       if (msg.error) addNote(`Stream ended with an error: ${msg.error}`, true);
+      dismissStaleApproval();
       break;
     case 'lineage':
       addLineageNote(msg.text);

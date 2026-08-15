@@ -12,6 +12,7 @@ node_modules/**
 .github/**
 images/**
 todo.txt
+issues.txt
 **/*.map
 !dist/extension.js
 !dist/media/chat.js

@@ -437,6 +437,107 @@ describe('webview bundle (dist/media/chat.js)', () => {
     btn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
   });
 
+  it('renders file-mode image thumbnails from enriched markdown tokens', async () => {
+    const { dom, post } = bootWebview();
+    let copied = '';
+    (dom.window.navigator as unknown as { clipboard?: { writeText: (t: string) => Promise<void> } }).clipboard = {
+      writeText: (t: string) => {
+        copied = t;
+        return Promise.resolve();
+      },
+    };
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [
+        {
+          role: 'user',
+          content:
+            "![Image](https://file+.vscode-resource.vscode-cdn.net/workspace/.hermes/attachments/1786786907340-0.png)\n\nI'd like you to make some changes.",
+        },
+      ],
+    } as unknown as HostMsg);
+    const user = dom.window.document.querySelector('.msg.user')!;
+    const img = user.querySelector('.images img') as HTMLImageElement;
+    expect(img).not.toBeNull();
+    expect(img.src).toContain('file+.vscode-resource.vscode-cdn.net');
+    const bubble = user.querySelector('.bubble') as HTMLElement;
+    expect(bubble.textContent).toBe("I'd like you to make some changes.");
+    expect(bubble.textContent).not.toContain('![Image]');
+    // Copy copies the cleaned text, never the markdown token.
+    (user.querySelector('.msg-copy') as HTMLButtonElement).dispatchEvent(
+      new dom.window.MouseEvent('click', { bubbles: true }),
+    );
+    await Promise.resolve();
+    expect(copied).toBe("I'd like you to make some changes.");
+  });
+
+  it('renders an image-only user message as a thumbnail with no empty bubble', () => {
+    const { dom, post } = bootWebview();
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [
+        { role: 'user', content: '![Image](https://file+.vscode-resource.vscode-cdn.net/x.png)' },
+      ],
+    } as unknown as HostMsg);
+    const user = dom.window.document.querySelector('.msg.user')!;
+    expect(user.querySelector('.images img')).not.toBeNull();
+    expect(user.querySelector('.bubble')).toBeNull();
+  });
+
+  it('strips base64 data URLs from user bubble text but keeps the thumbnail', () => {
+    const { dom, post } = bootWebview();
+    const dataUrl = 'data:image/png;base64,' + 'A'.repeat(200);
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [{ role: 'user', content: `${dataUrl}\n\nwhat do you see?` }],
+    } as unknown as HostMsg);
+    const user = dom.window.document.querySelector('.msg.user')!;
+    expect((user.querySelector('.images img') as HTMLImageElement).src).toBe(dataUrl);
+    expect((user.querySelector('.bubble') as HTMLElement).textContent).toBe('what do you see?');
+  });
+
+  it('opens the approval dialog on approval.request', () => {
+    const { dom, post } = bootWebview();
+    post({
+      type: 'stream',
+      event: { type: 'approval.request', command: 'rm -rf /tmp/x', description: 'destructive' },
+    } as unknown as HostMsg);
+    const approval = dom.window.document.getElementById('approval')!;
+    expect(approval.classList.contains('show')).toBe(true);
+    expect(dom.window.document.getElementById('approval-cmd')!.textContent).toContain('rm -rf /tmp/x');
+  });
+
+  it('does not open the approval dialog on approval.responded', () => {
+    const { dom, post } = bootWebview();
+    post({ type: 'stream', event: { type: 'approval.responded' } } as unknown as HostMsg);
+    expect(dom.window.document.getElementById('approval')!.classList.contains('show')).toBe(false);
+  });
+
+  it('closes a stale approval dialog when the run completes', () => {
+    const { dom, post } = bootWebview();
+    post({
+      type: 'stream',
+      event: { type: 'approval.request', command: 'rm -rf /tmp/x' },
+    } as unknown as HostMsg);
+    expect(dom.window.document.getElementById('approval')!.classList.contains('show')).toBe(true);
+    post({ type: 'stream', event: { type: 'run.completed' } } as unknown as HostMsg);
+    expect(dom.window.document.getElementById('approval')!.classList.contains('show')).toBe(false);
+    expect(dom.window.document.querySelector('.info-note')!.textContent).toContain('approval');
+  });
+
+  it('closes a stale approval dialog when the stream ends', () => {
+    const { dom, post } = bootWebview();
+    post({
+      type: 'stream',
+      event: { type: 'approval.request', command: 'rm -rf /tmp/x' },
+    } as unknown as HostMsg);
+    post({ type: 'stream:ended', sessionId: 's1' } as unknown as HostMsg);
+    expect(dom.window.document.getElementById('approval')!.classList.contains('show')).toBe(false);
+  });
+
   it('adds a copy button to tool card output', () => {
     const { dom, post } = bootWebview();
     post({
