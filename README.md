@@ -303,10 +303,12 @@ version commit):
    `## X.Y.Z (date)` section to `CHANGELOG.md`, and update the
    "current build" line at the top of this README.
 2. Commit and push.
-3. `./scripts/release.sh` — tags `vX.Y.Z`, pushes the tag, creates the
-   GitHub release with the CHANGELOG section as notes, and attaches
-   `dist/vsh-hermes-X.Y.Z.vsix` when present. GitHub auth comes from the
-   system git credential helper (no token stored in the repo).
+3. `./scripts/release.sh` — fetches origin first, rebases onto
+   `origin/main` if the remote has drifted (aborting cleanly on conflict),
+   rebuilds the vsix when the drift touched vsix inputs, then tags
+   `vX.Y.Z`, pushes, creates the GitHub release with the CHANGELOG section
+   as notes, and attaches `dist/vsh-hermes-X.Y.Z.vsix`. GitHub auth comes
+   from the system git credential helper (no token stored in the repo).
 
 ## Roadmap
 

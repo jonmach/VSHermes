@@ -8,14 +8,45 @@ cd "$(dirname "$0")/.."
 VERSION=$(node -p "require('./package.json').version")
 TAG="v$VERSION"
 REPO=jonmach/VSHermes
+VSIX="dist/vsh-hermes-$VERSION.vsix"
+# Paths that end up inside the vsix (bundled or shipped verbatim). If a
+# rebase drifts any of these, the pre-built vsix is stale and must be
+# rebuilt before attaching.
+VSIX_INPUTS='^(src/|media/|package.json|esbuild.mjs|README.md|CHANGELOG.md|LICENSE)'
 
 if [ -n "$(git status --porcelain)" ]; then
   echo "error: working tree is dirty — commit first" >&2
   exit 1
 fi
+
+# Sync with the remote before anything else: a release is a point-in-time
+# claim, so it must be based on the latest origin/main, not a stale local
+# main. Fetch first so both the drift check and the tag check see the truth.
+echo "==> fetching origin"
+git fetch origin
+
 if git rev-parse "$TAG" >/dev/null 2>&1; then
-  echo "error: tag $TAG already exists" >&2
+  echo "error: tag $TAG already exists (local or remote)" >&2
   exit 1
+fi
+
+# If origin/main has commits we don't, rebase onto it so the tag lands on
+# the integrated tip and the push stays fast-forward. Abort cleanly on
+# conflict — the user must resolve that by hand, we won't guess.
+if [ -n "$(git rev-list HEAD..origin/main 2>/dev/null)" ]; then
+  OLD_HEAD=$(git rev-parse HEAD)
+  echo "==> rebasing onto origin/main"
+  if ! git rebase origin/main; then
+    git rebase --abort
+    echo "error: rebase onto origin/main conflicted — resolve it manually, then re-run" >&2
+    exit 1
+  fi
+  if git diff --name-only "$OLD_HEAD" HEAD | grep -qE "$VSIX_INPUTS"; then
+    echo "==> drift changed vsix inputs — rebuilding $VSIX"
+    npm run package >/dev/null
+  else
+    echo "==> drift touched no vsix inputs — keeping existing $VSIX"
+  fi
 fi
 
 echo "==> tagging $TAG"
@@ -40,7 +71,6 @@ RESP=$(curl -sS -X POST -H "Authorization: token $TOKEN" -H "Accept: application
 ID=$(python3 -c "import json,sys; print(json.load(sys.stdin).get('id',''))" <<<"$RESP")
 [ -n "$ID" ] || { echo "release creation failed:" >&2; echo "$RESP" >&2; exit 1; }
 
-VSIX="dist/vsh-hermes-$VERSION.vsix"
 if [ -f "$VSIX" ]; then
   echo "==> attaching $VSIX"
   curl -sS -X POST -H "Authorization: token $TOKEN" -H "Content-Type: application/octet-stream" \
