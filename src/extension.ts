@@ -1288,7 +1288,11 @@ class VSHermes {
         { placeHolder: 'Provider' },
       );
       if (!provider) return;
-      const models = provider.provider.models.map((m) => m.id);
+      // Hermes returns `models` as plain string IDs (e.g. "anthropic/claude-opus-5"),
+      // not objects. Tolerate both shapes so the picker works against every server.
+      const models = provider.provider.models.map((m) =>
+        typeof m === 'string' ? m : m.id,
+      );
       const model = await vscode.window.showQuickPick(models, {
         placeHolder: `Model (${provider.provider.name})`,
       });

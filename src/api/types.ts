@@ -281,7 +281,7 @@ export interface ProviderOption {
   name: string;
   is_current: boolean;
   is_user_defined: boolean;
-  models: Array<{ id: string; name?: string }>;
+  models: Array<string | { id: string; name?: string }>;
   total_models: number;
   source: string;
   authenticated: boolean;
@@ -289,7 +289,7 @@ export interface ProviderOption {
   key_env: string;
   warning: string | null;
   capabilities: Record<string, unknown>;
-  featured_models: Array<{ id: string; name?: string }>;
+  featured_models: Array<string | { id: string; name?: string }>;
 }
 
 export interface ModelOptionsResponse {
