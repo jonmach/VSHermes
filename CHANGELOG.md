@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.0.8 (2026-08-17)
+
+- **Switch Model no longer crashes on real Hermes servers** — the model
+  picker read each provider's `models`/`featured_models` as objects
+  (`{ id, name? }`) and mapped `m.id`, but Hermes returns them as plain
+  string IDs (e.g. `anthropic/claude-opus-5`), so the QuickPick received
+  an array of `undefined` and died with "Cannot read properties of
+  undefined (reading 'kind')" the moment a provider was chosen. The picker
+  now tolerates both shapes; the API types are widened to match, the mock
+  server mirrors the real payload, and a regression test covers the
+  string-ID shape.
+
 ## 2.0.7 (2026-08-15)
 
 - **Per-turn usage meter in chat** — when the gateway reports usage on a
