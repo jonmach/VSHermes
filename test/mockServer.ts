@@ -180,7 +180,10 @@ export class MockHermesServer {
       return;
     }
     if (method === 'GET' && path === '/api/model/options') {
-      this.json(res, 200, { providers: [{ slug: 'deepseek', name: 'DeepSeek', is_current: true, models: [{ id: 'deepseek-v4-flash' }], total_models: 1, authenticated: true, auth_type: 'api_key', key_env: 'DEEPSEEK_API_KEY', warning: null, featured_models: [] }] });
+      // Mirror real Hermes: `models` is an array of plain string IDs (see
+      // hermes_cli/inventory.py `build_models_payload`). The object form is
+      // kept as a regression guard for older/tolerant clients.
+      this.json(res, 200, { providers: [{ slug: 'deepseek', name: 'DeepSeek', is_current: true, models: ['deepseek-v4-flash'], total_models: 1, authenticated: true, auth_type: 'api_key', key_env: 'DEEPSEEK_API_KEY', warning: null, featured_models: ['deepseek-v4-flash'] }] });
       return;
     }
 

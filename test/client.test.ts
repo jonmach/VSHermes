@@ -27,6 +27,15 @@ describe('HermesClient (against contract mock)', () => {
     expect(c.endpoints.session_chat_stream.path).toBe('/api/sessions/{session_id}/chat/stream');
   });
 
+  it('fetches model options with string model IDs (real Hermes shape)', async () => {
+    const opts = await client.modelOptions();
+    expect(opts.providers.length).toBeGreaterThan(0);
+    const prov = opts.providers[0];
+    // Real Hermes returns `models` as an array of plain string IDs, not objects.
+    expect(Array.isArray(prov.models)).toBe(true);
+    expect(prov.models[0]).toBe('deepseek-v4-flash');
+  });
+
   it('lists sessions', async () => {
     const res = await client.listSessions();
     expect(res.data.length).toBe(2);
