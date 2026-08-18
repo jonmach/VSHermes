@@ -879,4 +879,17 @@ describe('webview bundle (dist/media/chat.js)', () => {
     keydown(dom.window, 'Enter');
     expect(sent.some((m) => m.type === 'newSession')).toBe(true);
   });
+
+  it('blocks a typed TUI-only command with a note and never sends it', () => {
+    const { dom, sent, input } = bootWebview();
+    input.value = '/compress';
+    input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    // The popup is open but empty (compress is not in the catalog) — Enter
+    // must fall through to the send path, where the guard blocks it.
+    keydown(dom.window, 'Enter');
+    expect(sent.some((m) => m.type === 'send')).toBe(false);
+    const note = dom.window.document.getElementById('messages')!.querySelector('.error-note');
+    expect(note?.textContent).toContain('only available in the Hermes TUI');
+    expect(input.value).toBe('');
+  });
 });

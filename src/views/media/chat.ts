@@ -940,6 +940,9 @@ async function sendNow(textOverride?: string): Promise<void> {
       `/${blocked.name} is only available in the Hermes TUI — not through the API server. Nothing was sent.`,
       true,
     );
+    inputEl.value = '';
+    resizeInput();
+    hideSlashPopup();
     return;
   }
 
@@ -1083,16 +1086,26 @@ inputEl.addEventListener('keydown', (e) => {
       return;
     }
     if (e.key === 'Enter' || e.key === 'Tab') {
-      e.preventDefault();
       if (fileMode) {
         const f = filteredFiles()[state.fileIndex];
-        if (f) selectFile(f.abs);
+        if (f) {
+          e.preventDefault();
+          selectFile(f.abs);
+          return;
+        }
       } else {
-        const items = filterSlash(state.slashQuery);
+        const items = filterSlash(state.slashQuery).filter((c) => c.kind === 'action');
         const c = items[state.slashIndex];
-        if (c) selectSlash(c);
+        if (c) {
+          e.preventDefault();
+          selectSlash(c);
+          return;
+        }
       }
-      return;
+      // Nothing selectable (e.g. "/compress" — a TUI-only command that was
+      // removed from the catalog, so the filtered popup is empty). Fall
+      // through so Enter sends the input normally; the sendNow guard turns
+      // TUI-only invocations into a local note instead of a model call.
     }
   }
   if (e.key === 'Enter' && !e.shiftKey) {
