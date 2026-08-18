@@ -3,13 +3,17 @@
  *
  * The Hermes API Server does NOT interpret slash commands in message text —
  * it is an OpenAI-compatible surface. VSHermes therefore implements the
- * common commands client-side (mapped to API server endpoints) and lists
- * the rest as informational entries so the picker is honest about what is
- * available over the API surface. Commands that only exist in the TUI are
- * marked unsupported rather than silently sent as literal text.
+ * common commands client-side (mapped to API server endpoints). Commands
+ * that only exist in the TUI (client-side TUI machinery — context
+ * compression, mid-run steering, goal judge loops, …) have no API
+ * equivalent: sending them as literal text just burns a model turn that
+ * explains what the TUI command would have done. They are therefore kept
+ * in the catalog as `unsupported` (blocked locally with a note, listed in
+ * /help as reference) and the picker only offers working `action`
+ * commands.
  */
 
-export type SlashKind = 'action' | 'informational' | 'unsupported';
+export type SlashKind = 'action' | 'unsupported';
 
 export interface SlashCommandDef {
   name: string;
@@ -55,17 +59,17 @@ export const SLASH_COMMANDS: SlashCommandDef[] = [
   { name: 'reload', summary: 'Re-read the server config/.env and reconnect', kind: 'action', handler: 'reload' },
   { name: 'doctor', summary: 'Run a connection diagnostics check', kind: 'action', handler: 'doctor' },
 
-  // Informational — sent to Hermes as normal text (no API equivalent).
-  { name: 'retry', summary: 'Retry the last turn (sent as text)', kind: 'informational' },
-  { name: 'personality', summary: 'Switch personality (sent as text)', kind: 'informational' },
-  { name: 'save', summary: 'Save the current conversation (sent as text)', kind: 'informational' },
-  { name: 'queue', summary: 'Queue a prompt for the next turn (sent as text)', kind: 'informational' },
-  { name: 'steer', summary: 'Inject a mid-run note (sent as text)', kind: 'informational' },
-  { name: 'goal', summary: 'Set a standing goal Hermes works toward (sent as text)', kind: 'informational' },
-  { name: 'learn', summary: 'Distill a reusable skill from anything you describe (sent as text)', kind: 'informational' },
-
-  // Unsupported — TUI-only (no API equivalent, NOT sent as text), or
-  // already covered by a native VSHermes surface (see the summaries).
+  // Unsupported — TUI client-side machinery with no API equivalent. NOT
+  // sent as text (verified: the model just explains the TUI command and
+  // asks for args, burning a full turn). Typed invocations are blocked in
+  // the send path; /help lists them as reference.
+  { name: 'retry', summary: 'Retry the last turn (TUI-only)', kind: 'unsupported' },
+  { name: 'personality', summary: 'Switch personality (TUI-only)', kind: 'unsupported' },
+  { name: 'save', summary: 'Save the current conversation (TUI-only)', kind: 'unsupported' },
+  { name: 'queue', summary: 'Queue a prompt for the next turn (TUI-only)', kind: 'unsupported' },
+  { name: 'steer', summary: 'Inject a mid-run note (TUI-only)', kind: 'unsupported' },
+  { name: 'goal', summary: 'Set a standing goal Hermes works toward (TUI-only)', kind: 'unsupported' },
+  { name: 'learn', summary: 'Distill a reusable skill from anything you describe (TUI-only)', kind: 'unsupported' },
   { name: 'undo', summary: 'Undo last message (TUI-only)', kind: 'unsupported' },
   { name: 'yolo', summary: 'Bypass approval prompts (TUI-only)', kind: 'unsupported' },
   { name: 'export', summary: 'Export a profile (config, skills, theme) to a shareable archive (TUI-only)', kind: 'unsupported' },
@@ -118,6 +122,36 @@ export function matchSlash(input: string): SlashMatch | null {
     args,
     def: SLASH_COMMANDS.find((c) => c.name === name),
   };
+}
+
+/**
+ * TUI-only commands deliberately absent from the catalog but still blocked
+ * when typed. /compress and /compact were removed in 2.0.9 after verifying
+ * they cannot work over the REST API (no compress endpoint, no message
+ * write-back); they stay here so a typed invocation is blocked with a note
+ * instead of burning a model turn that explains the TUI command back.
+ */
+export const TUI_ONLY_BLOCKED = new Set(['compress', 'compact']);
+
+/**
+ * Return a SlashMatch when the input LEADING slash token names a command
+ * that must not be sent to the model: a catalog entry that is not a
+ * working `action`, or a name on the TUI_ONLY_BLOCKED list. Mid-sentence
+ * mentions ("can you /goal that") and unknown commands pass through
+ * unchanged — only a real leading command invocation is intercepted.
+ */
+export function blockedSlashCommand(input: string): SlashMatch | null {
+  const m = /^\/([a-zA-Z][a-zA-Z0-9_-]*)(?:\s+(.*))?$/.exec(input.trim());
+  if (!m) return null;
+  const name = m[1].toLowerCase();
+  const def = SLASH_COMMANDS.find((c) => c.name === name);
+  if (def && def.kind !== 'action') {
+    return { input, name, args: (m[2] ?? '').trim(), def };
+  }
+  if (TUI_ONLY_BLOCKED.has(name)) {
+    return { input, name, args: (m[2] ?? '').trim(), def };
+  }
+  return null;
 }
 
 export function filterSlash(query: string, limit = 8): SlashCommandDef[] {

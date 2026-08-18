@@ -8,7 +8,7 @@
 
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
-import { filterSlash, matchSlash, type SlashCommandDef } from '../../slash/commands';
+import { blockedSlashCommand, filterSlash, matchSlash, type SlashCommandDef } from '../../slash/commands';
 import type { SyncReport } from '../../api/sync';
 import type {
   ApprovalDecision,
@@ -784,7 +784,10 @@ function hideSlashPopup(): void {
 
 function renderSlashItems(query: string): void {
   state.slashQuery = query;
-  const items = filterSlash(query);
+  // The picker only offers commands that actually do something — TUI-only
+  // entries stay in the catalog as blocked/reference, but are never shown
+  // as pickable (they would just produce a "TUI-only" note on click).
+  const items = filterSlash(query).filter((c) => c.kind === 'action');
   state.slashIndex = Math.min(state.slashIndex, Math.max(items.length - 1, 0));
   slashPopup.innerHTML = '';
   items.forEach((c, i) => {
@@ -873,12 +876,11 @@ function selectSlash(c: SlashCommandDef): void {
     case 'action':
       runSlashAction(c);
       break;
-    case 'informational':
-      // Sent to Hermes as plain text (documented in the catalog).
-      void sendNow(`/${c.name}`);
-      break;
     case 'unsupported':
-      addNote(`/${c.name} is a TUI-only command — not available through the Hermes API server. ${c.summary}`, true);
+      addNote(
+        `/${c.name} is only available in the Hermes TUI — not through the API server. Nothing was sent.`,
+        true,
+      );
       break;
   }
   inputEl.focus();
@@ -928,6 +930,18 @@ async function sendNow(textOverride?: string): Promise<void> {
   const text = textOverride ?? inputEl.value;
   if (!text.trim() && state.chips.length === 0) return;
   if (state.streaming) return;
+
+  // TUI-only commands have no API equivalent — sending them as text just
+  // burns a model turn that explains what the TUI command would have done.
+  // Block locally and never send anything to the LLM.
+  const blocked = blockedSlashCommand(text);
+  if (blocked) {
+    addNote(
+      `/${blocked.name} is only available in the Hermes TUI — not through the API server. Nothing was sent.`,
+      true,
+    );
+    return;
+  }
 
   const parts: MessagePart[] = [];
   if (text.trim()) parts.push({ type: 'text', text: text.trim() });

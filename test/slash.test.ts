@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterSlash, matchSlash, SLASH_COMMANDS } from '../src/slash/commands';
+import { blockedSlashCommand, filterSlash, matchSlash, SLASH_COMMANDS } from '../src/slash/commands';
 
 describe('matchSlash', () => {
   it('matches a leading slash command', () => {
@@ -50,6 +50,13 @@ describe('filterSlash', () => {
 
   it('catalog marks TUI-only commands unsupported', () => {
     expect(SLASH_COMMANDS.find((c) => c.name === 'yolo')?.kind).toBe('unsupported');
+    // Former "informational" entries were reclassified after live
+    // verification: sent as text they burn a turn that explains the TUI
+    // command back (probe: /steer → "there's nothing to steer with", /goal
+    // → "no goal text") without ever executing the mechanism.
+    for (const name of ['retry', 'personality', 'save', 'queue', 'steer', 'goal', 'learn']) {
+      expect(SLASH_COMMANDS.find((c) => c.name === name)?.kind).toBe('unsupported');
+    }
   });
 
   it('catalog excludes destructive TUI-only commands (compress/compact)', () => {
@@ -59,6 +66,24 @@ describe('filterSlash', () => {
     // than offered as fake commands.
     expect(SLASH_COMMANDS.find((c) => c.name === 'compress')).toBeUndefined();
     expect(SLASH_COMMANDS.find((c) => c.name === 'compact')).toBeUndefined();
+  });
+
+  it('blocks leading TUI-only invocations from reaching the model', () => {
+    expect(blockedSlashCommand('/steer')).not.toBeNull();
+    expect(blockedSlashCommand('/goal make the tests pass')).not.toBeNull();
+    expect(blockedSlashCommand('/undo')).not.toBeNull();
+    // Removed-from-catalog commands stay blocked via TUI_ONLY_BLOCKED.
+    expect(blockedSlashCommand('/compress')?.name).toBe('compress');
+    expect(blockedSlashCommand('/compact')?.name).toBe('compact');
+  });
+
+  it('lets actions, unknown commands, and mid-sentence mentions through', () => {
+    expect(blockedSlashCommand('/new')).toBeNull();
+    expect(blockedSlashCommand('/model deepseek-v4-flash')).toBeNull();
+    expect(blockedSlashCommand('/definitely-not-a-command')).toBeNull();
+    expect(blockedSlashCommand('can you /goal that for me')).toBeNull();
+    expect(blockedSlashCommand('plain text message')).toBeNull();
+    expect(blockedSlashCommand('')).toBeNull();
   });
 
   it('catalog covers /title as a working action', () => {
@@ -85,9 +110,14 @@ describe('filterSlash', () => {
     expect(SLASH_COMMANDS.find((c) => c.name === 'doctor')?.handler).toBe('doctor');
   });
 
-  it('reclassifies agent-workflow commands as informational (not sent to a dead end)', () => {
-    expect(SLASH_COMMANDS.find((c) => c.name === 'goal')?.kind).toBe('informational');
-    expect(SLASH_COMMANDS.find((c) => c.name === 'learn')?.kind).toBe('informational');
+  it('reclassifies agent-workflow commands as blocked TUI-only (never sent)', () => {
+    // Live probe: sent as text, /goal and /learn make the model explain the
+    // TUI mechanism back ("no goal text", "what did you want to steer
+    // toward?") and burn a full turn. The mechanism never runs, so the
+    // commands are blocked locally instead of sent to a dead end.
+    expect(SLASH_COMMANDS.find((c) => c.name === 'goal')?.kind).toBe('unsupported');
+    expect(SLASH_COMMANDS.find((c) => c.name === 'learn')?.kind).toBe('unsupported');
+    expect(blockedSlashCommand('/goal build the roadmap')).not.toBeNull();
   });
 
   it('fixes the /export summary and drops the meaningless /quit', () => {

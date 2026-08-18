@@ -70,17 +70,19 @@ forms](images/chat1.png)
   `[Image pasted: …]` path references are mapped to webview-loadable URIs on
   render (attachments directory registered in the webview resource roots)
 
-**Slash commands** (`/` opens the picker)
+**Slash commands** (`/` opens the picker — working actions only)
 - Working actions (executed client-side against the API):
   `/new` `/clear` `/model` `/stop` `/history` `/sessions` `/resume`
   `/title` `/status` `/skills` `/fork` `/branch` `/help`
   (`/title My Session` sets the session title via `PATCH /api/sessions/{id}`;
   `/status` shows session info in chat)
-- Informational (sent to Hermes as plain text, flagged as such):
-  `/compact` `/retry` `/personality` `/save` `/compress` `/queue` `/steer`
-- TUI-only commands (`/undo` `/yolo` `/rollback` `/diff` `/goal` `/cron`
-  `/memory` `/mcp` `/plugins` …) are listed honestly as **unsupported** and
-  never sent as literal text
+- TUI-only commands (`/compact` `/compress` `/steer` `/goal` `/learn`
+  `/undo` `/yolo` `/rollback` `/diff` …) have no API equivalent — the REST
+  surface has no compress endpoint, no mid-run injection, no goal judge
+  loop, so sending them as text just burns a model turn that explains what
+  the TUI command would have done. They are never offered in the picker and
+  typed invocations are blocked with a "only available in the Hermes TUI —
+  nothing was sent" note; `/help` lists the full catalog as reference.
 
 **Endpoints** (sidebar tab in the VSHermes section, or the `$(server)`
 chat title-bar icon / "VSHermes: Endpoints…" — both reveal the tab)
@@ -180,9 +182,11 @@ chat title-bar icon / "VSHermes: Endpoints…" — both reveal the tab)
 - **Slash commands are implemented client-side.** The API server is
   OpenAI-compatible and does not interpret `/` text (verified against
   0.20.0; only session `/model` overrides exist as an endpoint). The
-  catalog maps commands to endpoints and keeps TUI-only commands visible but
-  marked. If Hermes later exposes a slash RPC over the API, the catalog's
-  `kind` flags switch entries to `action` without UI changes.
+  catalog maps commands to endpoints; TUI-only commands are kept as
+  reference and blocked locally with a note — never sent as text, which
+  would just burn a model turn. If Hermes later exposes a slash RPC over
+  the API, the catalog's `kind` flags switch entries to `action` without
+  UI changes.
 - **Images default to file mode.** Text-only main models reject inline
   `image_url` parts with a 400; saving to `$HERMES_HOME/attachments/` and
   referencing the path lets Hermes' vision fallback chain do the analysis,
