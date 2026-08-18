@@ -50,7 +50,15 @@ describe('filterSlash', () => {
 
   it('catalog marks TUI-only commands unsupported', () => {
     expect(SLASH_COMMANDS.find((c) => c.name === 'yolo')?.kind).toBe('unsupported');
-    expect(SLASH_COMMANDS.find((c) => c.name === 'compact')?.kind).toBe('informational');
+  });
+
+  it('catalog excludes destructive TUI-only commands (compress/compact)', () => {
+    // Context compression cannot be done over the REST API surface (no
+    // compress endpoint, no message write-back). Sending "/compress" as
+    // text just burns a turn, so the entries are removed entirely rather
+    // than offered as fake commands.
+    expect(SLASH_COMMANDS.find((c) => c.name === 'compress')).toBeUndefined();
+    expect(SLASH_COMMANDS.find((c) => c.name === 'compact')).toBeUndefined();
   });
 
   it('catalog covers /title as a working action', () => {

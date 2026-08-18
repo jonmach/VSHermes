@@ -56,11 +56,9 @@ export const SLASH_COMMANDS: SlashCommandDef[] = [
   { name: 'doctor', summary: 'Run a connection diagnostics check', kind: 'action', handler: 'doctor' },
 
   // Informational — sent to Hermes as normal text (no API equivalent).
-  { name: 'compact', summary: 'Compress the conversation (sent as text; TUI command not available via API)', kind: 'informational' },
   { name: 'retry', summary: 'Retry the last turn (sent as text)', kind: 'informational' },
   { name: 'personality', summary: 'Switch personality (sent as text)', kind: 'informational' },
   { name: 'save', summary: 'Save the current conversation (sent as text)', kind: 'informational' },
-  { name: 'compress', summary: 'Compress context manually (sent as text)', kind: 'informational' },
   { name: 'queue', summary: 'Queue a prompt for the next turn (sent as text)', kind: 'informational' },
   { name: 'steer', summary: 'Inject a mid-run note (sent as text)', kind: 'informational' },
   { name: 'goal', summary: 'Set a standing goal Hermes works toward (sent as text)', kind: 'informational' },
