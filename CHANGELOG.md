@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.0.9 (2026-08-18)
+
+- **Slash commands are honest: working actions only.** The picker
+  previously offered TUI-only commands (`/compact` `/compress` `/steer`
+  `/goal` `/learn` `/retry` `/save` `/personality` `/queue`) that were
+  "sent as text". Verified against a live Hermes server, that never
+  executed anything — the model burned a full turn explaining what the TUI
+  command would have done (a bare `/compress` probe consumed ~633k input
+  tokens and produced an explanation, not a compaction). Those entries are
+  gone from the picker, and typed invocations are now blocked locally with
+  a "only available in the Hermes TUI — nothing was sent" note: zero
+  tokens reach the model.
+- **`/compress` and `/compact` removed.** The REST API has no compress
+  endpoint and no message write-back (fork copies the full transcript;
+  PATCH is metadata-only), so in-place compression cannot work from a
+  client. The honest alternatives remain: `/new` for a fresh session, and
+  Copy as Markdown for a manual handoff.
+- **Fixed: Enter swallowed by an empty slash popup.** Typing a removed
+  command like `/compress` left the filtered popup empty and Enter died in
+  the popup handler instead of reaching the send path — the guard now
+  catches it and shows the note.
+
 ## 2.0.8 (2026-08-17)
 
 - **Switch Model no longer crashes on real Hermes servers** — the model
