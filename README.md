@@ -317,6 +317,10 @@ version commit):
 
 ## Roadmap
 
+- Multiple chat panes (side-by-side sessions in editor tabs) — a
+  `WebviewPanel` adapter over the existing chat surface (the webview is
+  already a thin client; sessions are server-side durable and independent),
+  with commands targeting the focused pane
 - Diff/checkpoint review for file changes (Hermes `checkpoints` integration)
 - AGENTS.md context injection per workspace
 - Runs/SSE activity feed for standalone `/v1/runs` submissions
