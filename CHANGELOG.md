@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.0.10 (2026-08-21)
+
+- **Run failures are never silent again.** Server-side run failures arrive
+  as well-formed events inside a 200 stream (`error`, `run.failed`,
+  `tool.failed`, `run.cancelled`), so the transport never errors and the
+  old code dropped them — a failed run rendered as "no response" with no
+  explanation. All four now render visibly: red notes for `error` /
+  `run.failed`, a red failed state with the error detail on the offending
+  tool card for `tool.failed`, a neutral note for cancellations — and the
+  Stop button reverts to Send in every case.
+- **Failed-before-delivery turns surface as a red note.** The API server
+  reports some client errors (bad or delisted model ids, stale configs,
+  provider 400s) as a normal-looking completed turn: the error text
+  arrives in `assistant.completed` with zero streamed deltas and no
+  `error` event. The webview detects that signature and shows a persistent
+  red note with the server's message instead of an empty, silent bubble.
+- **Failure notes survive transcript refreshes.** The host re-fetches the
+  session transcript after every run, and failed turns are never persisted
+  server-side — so the refresh used to erase the only trace of a failure
+  moments after it appeared. Failure notes are now re-attached across
+  rebuilds and cleared on session switch.
+- **Tool cards show icons and run durations.** Each tool card carries a
+  per-tool icon, and completed tools show their wall-clock duration
+  (" · 0.4s"), preserved across transcript rebuilds.
+
 ## 2.0.9 (2026-08-18)
 
 - **Slash commands are honest: working actions only.** The picker
