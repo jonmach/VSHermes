@@ -135,10 +135,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     .msg.user .images { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
     .msg.user .images img { max-width: 120px; max-height: 120px; object-fit: cover; border-radius: 6px; border: 1px solid var(--vsh-border); }
     .tool-card { font-size: 12px; border: 1px solid var(--vsh-border); border-left: 3px solid var(--vsh-accent); border-radius: 6px; padding: 6px 10px; background: var(--vsh-user-bubble); max-width: 92%; position: relative; }
+    .tool-card .ticon { margin-right: 4px; }
     .tool-card .tname { font-weight: 600; }
     .tool-card .tstatus { color: var(--vsh-muted); }
     .tool-card.failed { border-left-color: var(--vsh-error); }
-    .tool-card.failed .tstatus { color: var(--vsh-error); }
+    .tool-card.failed .tstatus { color: var(--vsh-error); font-weight: 600; }
+    .tool-card .terr { display: block; margin-top: 4px; font-size: 11px; color: var(--vsh-error); white-space: pre-wrap; word-break: break-word; }
     .tool-card pre { margin: 4px 0 0; font-size: 11px; white-space: pre-wrap; background: var(--vsh-code-bg); padding: 6px; border-radius: 4px; max-height: 160px; overflow-y: auto; }
     .tool-copy { position: absolute; top: 2px; right: 2px; background: transparent; color: var(--vsh-muted); border: none; border-radius: 4px; font-size: 12px; padding: 2px 6px; cursor: pointer; opacity: 0; transition: opacity 0.15s; }
     .tool-card:hover .tool-copy { opacity: 1; }

@@ -160,6 +160,150 @@ describe('webview tool-call visibility (dist/media/chat.js)', () => {
     expect(cards[0].classList.contains('failed')).toBe(true);
   });
 
+  it('classifies a stored terminal failure (exit code) as a failed red card', () => {
+    const { dom, post } = boot();
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [
+        { role: 'user', content: 'list the missing dir' },
+        {
+          role: 'assistant',
+          id: 'm1',
+          content: '',
+          tool_calls: [
+            {
+              id: 'call_00_term1',
+              call_id: 'call_00_term1',
+              type: 'function',
+              function: { name: 'terminal', arguments: '{"command": "ls /definitely/not/a/real/path"}' },
+            },
+          ],
+        },
+        {
+          role: 'tool',
+          id: 't1',
+          tool_call_id: 'call_00_term1',
+          tool_name: 'terminal',
+          content: JSON.stringify({ output: "ls: cannot access '/definitely/not/a/real/path': No such file or directory", exit_code: 2, error: null }),
+        },
+      ],
+    });
+    const cards = dom.window.document.querySelectorAll('.tool-card');
+    expect(cards.length).toBe(1);
+    expect(cards[0].classList.contains('failed')).toBe(true);
+    expect(cards[0].textContent).toContain('failed [exit 2]');
+    expect(cards[0].querySelector('.terr')!.textContent).toContain('exit 2');
+  });
+
+  it('classifies a structured error result (read_file missing) as failed with the trimmed message', () => {
+    const { dom, post } = boot();
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [
+        { role: 'user', content: 'read it' },
+        {
+          role: 'assistant',
+          id: 'm1',
+          content: '',
+          tool_calls: [
+            {
+              id: 'call_00_read1',
+              call_id: 'call_00_read1',
+              type: 'function',
+              function: { name: 'read_file', arguments: '{"path": "/very/long/absolute/path/foo.py"}' },
+            },
+          ],
+        },
+        {
+          role: 'tool',
+          id: 't1',
+          tool_call_id: 'call_00_read1',
+          tool_name: 'read_file',
+          content: JSON.stringify({ success: false, error: 'File not found: /very/long/absolute/path/foo.py' }),
+        },
+      ],
+    });
+    const cards = dom.window.document.querySelectorAll('.tool-card');
+    expect(cards.length).toBe(1);
+    expect(cards[0].classList.contains('failed')).toBe(true);
+    // Path collapses to the filename, mirroring the server's _trim_error.
+    expect(cards[0].textContent).toContain('File not found: foo.py');
+    expect(cards[0].querySelector('.terr')!.textContent).toContain('File not found: /very/long/absolute/path/foo.py');
+  });
+
+  it('leaves a successful stored tool result as a plain done card', () => {
+    const { dom, post } = boot();
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [
+        { role: 'user', content: 'check the version' },
+        {
+          role: 'assistant',
+          id: 'm1',
+          content: 'The version is 2.0.3.',
+          tool_calls: [
+            {
+              id: 'call_00_ok1',
+              call_id: 'call_00_ok1',
+              type: 'function',
+              function: { name: 'terminal', arguments: '{"command": "cat package.json"}' },
+            },
+          ],
+        },
+        {
+          role: 'tool',
+          id: 't1',
+          tool_call_id: 'call_00_ok1',
+          tool_name: 'terminal',
+          content: JSON.stringify({ output: '{"version": "2.0.3"}', exit_code: 0, error: null }),
+        },
+      ],
+    });
+    const cards = dom.window.document.querySelectorAll('.tool-card');
+    expect(cards.length).toBe(1);
+    expect(cards[0].classList.contains('failed')).toBe(false);
+    expect(cards[0].textContent).toContain('done');
+  });
+
+  it('renders a per-tool icon and a live duration suffix on the card', () => {
+    const { dom, post } = boot();
+    post({ type: 'stream', event: { type: 'run.started', session_id: 's' } });
+    post({
+      type: 'stream',
+      event: { type: 'message.started', session_id: 's', message: { id: 'm1', role: 'assistant' } },
+    });
+    post({
+      type: 'stream',
+      event: {
+        type: 'tool.started',
+        session_id: 's',
+        message_id: 'm1',
+        tool_name: 'terminal',
+        preview: 'ls -la',
+        args: null,
+      },
+    });
+    post({
+      type: 'stream',
+      event: {
+        type: 'tool.completed',
+        session_id: 's',
+        message_id: 'm1',
+        tool_name: 'terminal',
+        preview: null,
+        args: null,
+      },
+    });
+    const cards = dom.window.document.querySelectorAll('.tool-card');
+    expect(cards.length).toBe(1);
+    expect(cards[0].querySelector('.ticon')!.textContent).toBe('💻');
+    // Duration suffix: "done · 0.x s" (jsdom runs instantly, so 0.x).
+    expect(cards[0].textContent).toMatch(/done · \d+(\.\d+)?s/);
+  });
+
   it('keeps scroll position when a transcript refresh appends content', () => {
     const { dom, post } = boot();
     const messagesEl = dom.window.document.getElementById('messages') as HTMLElement;

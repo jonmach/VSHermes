@@ -70,6 +70,10 @@ const connEl = $('#conn');
 interface ToolCard {
   el: HTMLElement;
   done: boolean;
+  /** Card key (toolName:msgIndex) — used to re-attach duration after rebuilds. */
+  key: string;
+  /** Client-side wall-clock at tool.started — for the duration line. */
+  startedAt?: number;
 }
 
 interface RenderMsg {
@@ -101,6 +105,20 @@ const state: {
    * usage lines that were appended live during streaming.
    */
   usageByTurn: Map<number, { input_tokens: number; output_tokens: number; total_tokens: number }>;
+  /** Per-card duration suffix (" · 0.4s") keyed by card key — survives
+   * transcript rebuilds, like usageByTurn. */
+  toolDurations: Map<string, string>;
+  /** assistant.delta events received in the current turn. 0 at
+   * assistant.completed means the stream delivered nothing before the
+   * final content — the signature of a run that failed before delivery. */
+  turnDeltaCount: number;
+  /** tool.* events seen in the current turn. */
+  turnToolCount: number;
+  /** Red error notes raised from stream failure events. Re-appended after
+   * every transcript rebuild: failed turns are NOT persisted server-side,
+   * so without this the rebuild would erase the only visible trace of the
+   * failure. Scoped to the current session. */
+  persistentErrorNotes: string[];
   chips: string[];
   approval: unknown | null;
   slashIndex: number;
@@ -127,6 +145,10 @@ const state: {
   active: null,
   lineage: null,
   usageByTurn: new Map(),
+  toolDurations: new Map(),
+  turnDeltaCount: 0,
+  turnToolCount: 0,
+  persistentErrorNotes: [],
   chips: [],
   approval: null,
   slashIndex: 0,
@@ -292,9 +314,9 @@ function addToolCard(msg: RenderMsg, toolName: string, preview: string | null, a
           .join(' · ')
           .slice(0, 300)
       : null);
-  el.innerHTML = `<span class="tname">${escapeHtml(toolName)}</span> <span class="tstatus">… running</span>${
+  el.innerHTML = `<span class="ticon">${toolIcon(toolName)}</span><span class="tname">${escapeHtml(toolName)}</span> <span class="tstatus">… running</span>${
     previewText ? `<pre>${escapeHtml(previewText)}</pre>` : ''
-  }`;
+  }<span class="terr" hidden></span>`;
   const outPre = el.querySelector('pre');
   if (outPre) {
     // Sibling of the pre, not a child — progress updates rewrite pre.textContent.
@@ -307,10 +329,32 @@ function addToolCard(msg: RenderMsg, toolName: string, preview: string | null, a
   } else {
     msg.el.appendChild(el);
   }
-  card = { el, done: false };
+  card = { el, done: false, key };
   msg.tools.set(key, card);
   scrollBottom();
   return card;
+}
+
+/**
+ * Set a tool card's status line, preserving an existing duration suffix
+ * ("done · 0.4s") — re-called on transcript rebuilds where the duration
+ * was recorded live but the DOM was recreated.
+ */
+function setToolStatus(card: ToolCard, status: string): void {
+  const el = card.el.querySelector('.tstatus');
+  if (el) el.textContent = status;
+}
+
+/** Apply a classified failure to a tool card: red state + error detail. */
+function markToolFailed(card: ToolCard, failure: ToolFailure): void {
+  card.el.classList.add('failed');
+  setToolStatus(card, `failed${failure.suffix}`);
+  card.done = true;
+  const terr = card.el.querySelector('.terr') as HTMLElement | null;
+  if (terr && failure.detail) {
+    terr.textContent = failure.detail;
+    terr.hidden = false;
+  }
 }
 
 function ensureThinking(msg: RenderMsg): HTMLElement {
@@ -335,6 +379,22 @@ function addNote(text: string, error = false): void {
   scrollBottom();
 }
 
+/**
+ * Red note for a run-level failure, persisted across transcript rebuilds.
+ * The host re-posts the full message list after every run
+ * (refreshSessionAfterRun) and renderMessages rebuilds the DOM from it;
+ * failed turns are NOT persisted server-side, so a plain addNote() would
+ * be wiped a moment after appearing. renderMessages re-appends the notes
+ * recorded here after each rebuild. Scoped to the current session (cleared
+ * on session switch).
+ */
+function addPersistentErrorNote(text: string): void {
+  const trimmed = typeof text === 'string' ? text.trim() : '';
+  if (!trimmed) return;
+  state.persistentErrorNotes.push(trimmed);
+  addNote(trimmed, true);
+}
+
 /** Last rendered assistant message, or null. */
 function lastAssistant(): RenderMsg | null {
   for (let i = state.messages.length - 1; i >= 0; i--) {
@@ -348,6 +408,113 @@ function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}k`;
   return `${n}`;
+}
+
+// ── tool cards: icons, duration, failure classification ─────────────
+
+/** TUI-style gutter icon per tool name. Unknown tools get a gear. */
+const TOOL_ICONS: Record<string, string> = {
+  terminal: '💻',
+  search_files: '🔎',
+  read_file: '📄',
+  write_file: '✏️',
+  patch: '🔧',
+  web_search: '🌐',
+  web_extract: '🧾',
+  browser_exec: '🧭',
+  execute_code: '🐍',
+  skill_view: '📚',
+  memory: '🧠',
+  delegate_task: '🤝',
+  vision_analyze: '👁️',
+};
+
+function toolIcon(toolName: string): string {
+  return TOOL_ICONS[toolName] ?? '⚙️';
+}
+
+/** Wall-clock duration as the TUI renders it: "0.4s", "1.2s", "1m 02s". */
+function fmtDuration(ms: number): string {
+  if (ms < 1000) {
+    const tenths = Math.round(ms / 100);
+    return tenths >= 10 ? '1s' : `0.${tenths}s`;
+  }
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
+}
+
+/** Mirror of the server's _trim_error (agent/display.py): collapse long
+ * absolute paths to their filename, cap at 48 chars. */
+function trimToolError(msg: string): string {
+  let m = msg.trim();
+  if (m.includes('File not found:')) {
+    const tail = m.split('File not found:')[1]?.trim() ?? '';
+    if (tail.includes('/')) m = `File not found: ${tail.split('/').pop()}`;
+  }
+  if (m.length > 48) m = m.slice(0, 45) + '...';
+  return m;
+}
+
+export interface ToolFailure {
+  failed: boolean;
+  /** Short informational tag like "[exit 2]" or "[File not found: foo.py]". */
+  suffix: string;
+  /** Trimmed error text for the card's error line. */
+  detail: string;
+}
+
+/**
+ * Client-side mirror of the server's _detect_tool_failure
+ * (agent/display.py:1335). The session-chat stream drops the is_error flag,
+ * so the webview re-classifies from the stored tool result (role:"tool"
+ * message content) after the run — same rules, same verdicts the TUI shows.
+ */
+export function classifyToolFailure(toolName: string, result: string | null | undefined): ToolFailure {
+  const none: ToolFailure = { failed: false, suffix: '', detail: '' };
+  if (!result) return none;
+  let data: Record<string, unknown> | null = null;
+  try {
+    const parsed = JSON.parse(result);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) data = parsed as Record<string, unknown>;
+  } catch {
+    /* not JSON — fall through to string heuristics */
+  }
+
+  // Terminal: non-zero exit code is the canonical failure signal.
+  if (toolName === 'terminal' && data) {
+    const exitCode = data.exit_code;
+    if (typeof exitCode === 'number' && exitCode !== 0) {
+      const err = typeof data.error === 'string' ? data.error : '';
+      return err
+        ? { failed: true, suffix: ` [${trimToolError(err)}]`, detail: err }
+        : { failed: true, suffix: ` [exit ${exitCode}]`, detail: `exit ${exitCode}` };
+    }
+    return none;
+  }
+
+  // Memory: distinguish "store full" from real errors.
+  if (toolName === 'memory' && data) {
+    if (data.success === false && typeof data.error === 'string' && data.error.includes('exceed the limit')) {
+      return { failed: true, suffix: ' [full]', detail: data.error };
+    }
+  }
+
+  // Structured error in JSON result (any tool that surfaces {"error": ...}).
+  if (data) {
+    const err = data.error ?? data.message;
+    if (err && (data.success === false || 'error' in data)) {
+      const text = String(err);
+      return { failed: true, suffix: ` [${trimToolError(text)}]`, detail: text };
+    }
+  }
+
+  // Generic heuristic for non-terminal tools.
+  const lower = result.slice(0, 500).toLowerCase();
+  if (lower.includes('"error"') || lower.includes('"failed"') || result.startsWith('Error')) {
+    return { failed: true, suffix: ' [error]', detail: result.slice(0, 120) };
+  }
+  return none;
 }
 
 /**
@@ -396,16 +563,35 @@ function escapeHtml(s: string): string {
 
 // ── rendering from stored messages ─────────────────────────────────
 
-function renderMessages(messages: ChatMessage[]): void {
+function renderMessages(messages: ChatMessage[], sessionId?: string | null): void {
   const atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 60;
   const prevTop = messagesEl.scrollTop;
   const prevHeight = messagesEl.scrollHeight;
+  // Failure notes are scoped to the session they occurred in — a different
+  // session's transcript must not inherit them.
+  if (sessionId && sessionId !== state.sessionId) {
+    state.persistentErrorNotes = [];
+  }
   messagesEl.innerHTML = '';
   state.messages = [];
   state.active = null;
   const spacer = document.createElement('div');
   spacer.style.flex = '1';
   messagesEl.appendChild(spacer);
+
+  // Collect tool results for failure classification: role:"tool" messages
+  // carry the result content and a tool_call_id linking back to the
+  // assistant's tool_calls entry. Results follow their assistant message in
+  // the transcript, so a positional queue covers id-less fixtures.
+  const toolResultById = new Map<string, string | null>();
+  const toolResultsInOrder: (string | null)[] = [];
+  for (const m of messages) {
+    if (m.role === 'tool') {
+      if (m.tool_call_id) toolResultById.set(m.tool_call_id, m.content);
+      toolResultsInOrder.push(m.content);
+    }
+  }
+  let toolResultCursor = 0;
 
   for (const m of messages) {
     if (m.role === 'user') {
@@ -425,7 +611,12 @@ function renderMessages(messages: ChatMessage[]): void {
         t.querySelector('.body')!.textContent = m.reasoning_content ?? m.reasoning ?? '';
       }
       if (Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
-        for (const tc of m.tool_calls as Array<{ name?: string; function?: { name?: string; arguments?: string } }>) {
+        for (const tc of m.tool_calls as Array<{
+          id?: string;
+          call_id?: string;
+          name?: string;
+          function?: { name?: string; arguments?: string };
+        }>) {
           const name = tc.name ?? tc.function?.name ?? 'tool';
           let argsPreview: string | null = null;
           try {
@@ -438,8 +629,20 @@ function renderMessages(messages: ChatMessage[]): void {
             argsPreview = tc.function?.arguments?.slice(0, 300) ?? null;
           }
           const card = addToolCard(msg, name, argsPreview, null);
-          card.el.querySelector('.tstatus')!.textContent = 'done';
-          card.done = true;
+          // Match the tool result to this call: by call id when present,
+          // else the next tool result in transcript order.
+          const callId = tc.id ?? tc.call_id ?? null;
+          const result =
+            (callId !== null && toolResultById.has(callId) ? toolResultById.get(callId) : undefined) ??
+            toolResultsInOrder[toolResultCursor++] ??
+            null;
+          const failure = classifyToolFailure(name, result);
+          if (failure.failed) {
+            markToolFailed(card, failure);
+          } else {
+            setToolStatus(card, `done${state.toolDurations.get(card.key) ?? ''}`);
+            card.done = true;
+          }
         }
       }
     }
@@ -453,6 +656,12 @@ function renderMessages(messages: ChatMessage[]): void {
     if (msg && msg.kind === 'assistant' && !msg.el.querySelector('.usage-line')) {
       appendUsageLine(msg, usage);
     }
+  }
+  // Re-attach failure notes. The server does not persist failed turns, so
+  // the rebuild above would otherwise erase the only trace of a failure
+  // (notes appended live during streaming live inside messagesEl).
+  for (const note of state.persistentErrorNotes) {
+    addNote(note, true);
   }
   if (atBottom) {
     scrollBottom();
@@ -549,21 +758,28 @@ function onStreamEvent(ev: StreamEvent): void {
   switch (ev.type) {
     case 'run.started':
       state.streaming = true;
+      state.turnDeltaCount = 0;
+      state.turnToolCount = 0;
       updateRunUi();
       break;
     case 'message.started':
+      state.turnDeltaCount = 0;
+      state.turnToolCount = 0;
       state.active = addAssistantMessage();
       break;
     case 'assistant.delta': {
+      state.turnDeltaCount += 1;
       if (!state.active) state.active = addAssistantMessage();
       state.active.content = (state.active.content ?? '') + ev.delta;
       setContent(state.active.contentEl!, state.active.content);
       break;
     }
     case 'tool.started': {
+      state.turnToolCount += 1;
       if (!state.active) state.active = addAssistantMessage();
       const card = addToolCard(state.active, ev.tool_name, ev.preview, ev.args ?? null);
-      card.el.querySelector('.tstatus')!.textContent = 'running…';
+      card.startedAt = Date.now();
+      setToolStatus(card, 'running…');
       break;
     }
     case 'tool.progress': {
@@ -586,19 +802,49 @@ function onStreamEvent(ev: StreamEvent): void {
     case 'tool.completed': {
       if (!state.active) break;
       const card = addToolCard(state.active, ev.tool_name, null, null);
-      card.el.querySelector('.tstatus')!.textContent = 'done';
+      const dur =
+        card.startedAt !== undefined && card.startedAt > 0
+          ? ` · ${fmtDuration(Date.now() - card.startedAt)}`
+          : '';
+      state.toolDurations.set(card.key, dur);
+      setToolStatus(card, `done${dur}`);
       card.done = true;
       break;
     }
     case 'tool.failed': {
       if (!state.active) break;
       const card = addToolCard(state.active, ev.tool_name, ev.preview ?? null, ev.args ?? null);
-      card.el.querySelector('.tstatus')!.textContent = 'failed';
-      card.el.classList.add('failed');
-      card.done = true;
+      const failure = classifyToolFailure(ev.tool_name, (ev as { error?: string }).error ?? null);
+      markToolFailed(card, failure);
       break;
     }
     case 'assistant.completed': {
+      // Non-retryable client failures (bad/delisted model ids, provider
+      // 400s, stale client configs) arrive as a NORMAL completed turn: the
+      // server returns the error text as the final content with ZERO
+      // deltas streamed — no `error` / `run.failed` event is emitted, so
+      // the failure is otherwise invisible. A successful turn always
+      // streams deltas or tool events first, so "content with nothing
+      // delivered" is the failure signature. Surface it as a persistent
+      // red note, like the `error` / `run.failed` cases below.
+      const deliveredNothing =
+        !ev.interrupted &&
+        state.turnDeltaCount === 0 &&
+        state.turnToolCount === 0 &&
+        typeof ev.content === 'string' &&
+        ev.content.trim() !== '';
+      if (deliveredNothing) {
+        // Drop the empty bubble message.started created — the turn never
+        // produced output, only an error. The note is the failure signal.
+        if (state.active) {
+          const idx = state.messages.indexOf(state.active);
+          if (idx >= 0) state.messages.splice(idx, 1);
+          state.active.el.remove();
+          state.active = null;
+        }
+        addPersistentErrorNote(ev.content);
+        break;
+      }
       if (state.active) {
         state.active.content = ev.content;
         setContent(state.active.contentEl!, ev.content);
@@ -634,13 +880,13 @@ function onStreamEvent(ev: StreamEvent): void {
     case 'error':
       state.streaming = false;
       updateRunUi();
-      addNote(ev.message || 'The run failed.', true);
+      addPersistentErrorNote(ev.message || 'The run failed.');
       dismissStaleApproval();
       break;
     case 'run.failed':
       state.streaming = false;
       updateRunUi();
-      addNote(ev.error || 'The run failed.', true);
+      addPersistentErrorNote(ev.error || 'The run failed.');
       dismissStaleApproval();
       break;
     case 'run.cancelled':
@@ -1019,7 +1265,7 @@ function onHostMessage(msg: HostMessage): void {
         // The chat window shows the current session's messages only — any
         // session switch (/new, /clear, delete-current, …) resets the view.
         state.lineage = null;
-        renderMessages([]);
+        renderMessages([], msg.sessionId);
       }
       state.sessionId = msg.sessionId;
       state.syncReport = msg.syncReport;
@@ -1039,7 +1285,7 @@ function onHostMessage(msg: HostMessage): void {
       // Session metadata — the model display moved to the status bar.
       break;
     case 'messages':
-      renderMessages(msg.messages);
+      renderMessages(msg.messages, msg.sessionId);
       state.sessionId = msg.sessionId;
       clearNoSessionHint();
       break;

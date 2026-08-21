@@ -913,6 +913,106 @@ describe('webview bundle (dist/media/chat.js)', () => {
     expect(note!.textContent).toContain('provider 401');
   });
 
+  it('surfaces a failed-before-delivery turn (assistant.completed with no deltas) as a red note', () => {
+    const { dom, post } = bootWebview();
+    post({ type: 'state', sessionId: 's1', connected: true, baseUrl: 'http://127.0.0.1:8642', slashCommands: [] } as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'message.started', message_id: 'm1' } } as unknown as HostMsg);
+    post({
+      type: 'stream',
+      event: {
+        type: 'assistant.completed',
+        message_id: 'm1',
+        content:
+          'Error code: 400 - The supported API model names are deepseek-v4-pro, deepseek-v4-flash, and deepseek-v4-flash-vision-exp, but you passed poolside/laguna-xs-2.1:free.',
+        completed: true,
+        partial: false,
+        interrupted: false,
+      },
+    } as unknown as HostMsg);
+    const messages = dom.window.document.getElementById('messages')!;
+    const note = messages.querySelector('.error-note');
+    expect(note).not.toBeNull();
+    expect(note!.textContent).toContain('poolside/laguna-xs-2.1:free');
+    // The empty bubble message.started created is dropped — no ghost reply.
+    expect(messages.querySelector('.msg.assistant')).toBeNull();
+  });
+
+  it('does not flag a normally streamed turn as a failure', () => {
+    const { dom, post } = bootWebview();
+    post({ type: 'state', sessionId: 's1', connected: true, baseUrl: 'http://127.0.0.1:8642', slashCommands: [] } as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'message.started', message_id: 'm1' } } as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'assistant.delta', message_id: 'm1', delta: 'hello' } } as unknown as HostMsg);
+    post({
+      type: 'stream',
+      event: {
+        type: 'assistant.completed',
+        message_id: 'm1',
+        content: 'hello',
+        completed: true,
+        partial: false,
+        interrupted: false,
+      },
+    } as unknown as HostMsg);
+    const messages = dom.window.document.getElementById('messages')!;
+    expect(messages.querySelector('.error-note')).toBeNull();
+    expect(messages.textContent).toContain('hello');
+  });
+
+  it('keeps the failure note across the post-run transcript rebuild', () => {
+    const { dom, post } = bootWebview();
+    post({ type: 'state', sessionId: 's1', connected: true, baseUrl: 'http://127.0.0.1:8642', slashCommands: [] } as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'message.started', message_id: 'm1' } } as unknown as HostMsg);
+    post({
+      type: 'stream',
+      event: {
+        type: 'assistant.completed',
+        message_id: 'm1',
+        content: 'Error code: 400 - invalid model poolside/laguna-xs-2.1:free',
+        completed: true,
+        partial: false,
+        interrupted: false,
+      },
+    } as unknown as HostMsg);
+    // The host re-posts the transcript after every run
+    // (refreshSessionAfterRun); the failed turn was never persisted
+    // server-side, so the list contains only the user message.
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [{ id: '1', role: 'user', content: 'Does this model work?' }],
+    } as unknown as HostMsg);
+    const messages = dom.window.document.getElementById('messages')!;
+    const note = messages.querySelector('.error-note');
+    expect(note).not.toBeNull();
+    expect(note!.textContent).toContain('invalid model');
+  });
+
+  it('clears failure notes when switching to a different session', () => {
+    const { dom, post } = bootWebview();
+    post({ type: 'state', sessionId: 's1', connected: true, baseUrl: 'http://127.0.0.1:8642', slashCommands: [] } as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'message.started', message_id: 'm1' } } as unknown as HostMsg);
+    post({
+      type: 'stream',
+      event: {
+        type: 'assistant.completed',
+        message_id: 'm1',
+        content: 'Error code: 400 - invalid model',
+        completed: true,
+        partial: false,
+        interrupted: false,
+      },
+    } as unknown as HostMsg);
+    expect(dom.window.document.getElementById('messages')!.querySelector('.error-note')).not.toBeNull();
+    // /new → the host posts state for a fresh session; the old session's
+    // failure notes must not follow.
+    post({ type: 'state', sessionId: 's2', connected: true, baseUrl: 'http://127.0.0.1:8642', slashCommands: [] } as unknown as HostMsg);
+    expect(dom.window.document.getElementById('messages')!.querySelector('.error-note')).toBeNull();
+  });
+
   it('clears the streaming state when the run errors (send button reverts to Send)', () => {
     const { dom, post, sendBtn } = bootWebview();
     post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
