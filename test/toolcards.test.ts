@@ -124,6 +124,42 @@ describe('webview tool-call visibility (dist/media/chat.js)', () => {
     expect(cards[0].textContent).toContain('/workspace/projects/VSHermes/package.json');
   });
 
+  it('marks a tool card as failed when the server emits tool.failed', () => {
+    const { dom, post } = boot();
+    post({ type: 'stream', event: { type: 'run.started', session_id: 's' } });
+    post({
+      type: 'stream',
+      event: { type: 'message.started', session_id: 's', message: { id: 'm1', role: 'assistant' } },
+    });
+    post({
+      type: 'stream',
+      event: {
+        type: 'tool.started',
+        session_id: 's',
+        message_id: 'm1',
+        tool_name: 'read_file',
+        preview: null,
+        args: null,
+      },
+    });
+    post({
+      type: 'stream',
+      event: {
+        type: 'tool.failed',
+        session_id: 's',
+        message_id: 'm1',
+        tool_name: 'read_file',
+        preview: null,
+        args: null,
+      },
+    });
+    const cards = dom.window.document.querySelectorAll('.tool-card');
+    expect(cards.length).toBe(1);
+    expect(cards[0].textContent).toContain('read_file');
+    expect(cards[0].textContent).toContain('failed');
+    expect(cards[0].classList.contains('failed')).toBe(true);
+  });
+
   it('keeps scroll position when a transcript refresh appends content', () => {
     const { dom, post } = boot();
     const messagesEl = dom.window.document.getElementById('messages') as HTMLElement;

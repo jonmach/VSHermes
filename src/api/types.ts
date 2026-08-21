@@ -233,6 +233,32 @@ export interface DoneEvent extends StreamEventBase {
   type: 'done';
 }
 
+/** Server-side run failure (network, provider, timeout). Sent by the
+ * session chat stream as `event: error` with a redacted message, then
+ * `done`. The TUI surfaces this prominently; the plugin must too. */
+export interface StreamErrorEvent extends StreamEventBase {
+  type: 'error';
+  message: string;
+}
+
+/** Terminal failure on the /v1/runs surface. */
+export interface RunFailedEvent extends StreamEventBase {
+  type: 'run.failed';
+  error: string;
+}
+
+export interface RunCancelledEvent extends StreamEventBase {
+  type: 'run.cancelled';
+}
+
+export interface ToolFailedEvent extends StreamEventBase {
+  type: 'tool.failed';
+  message_id: string;
+  tool_name: string;
+  preview: string | null;
+  args: Record<string, unknown> | null;
+}
+
 /** Approval requests are advertised (approval_events) but their exact
  * event type name was not observed in this deployment — matched
  * generically by /^approval\./ so any future shape works. No index
@@ -254,9 +280,13 @@ export type StreamEvent =
   | ToolStartedEvent
   | ToolProgressEvent
   | ToolCompletedEvent
+  | ToolFailedEvent
   | AssistantCompletedEvent
   | RunCompletedEvent
   | DoneEvent
+  | StreamErrorEvent
+  | RunFailedEvent
+  | RunCancelledEvent
   | ApprovalRequestEvent;
 
 export type ApprovalDecision = 'once' | 'session' | 'always' | 'deny';

@@ -590,6 +590,14 @@ function onStreamEvent(ev: StreamEvent): void {
       card.done = true;
       break;
     }
+    case 'tool.failed': {
+      if (!state.active) break;
+      const card = addToolCard(state.active, ev.tool_name, ev.preview ?? null, ev.args ?? null);
+      card.el.querySelector('.tstatus')!.textContent = 'failed';
+      card.el.classList.add('failed');
+      card.done = true;
+      break;
+    }
     case 'assistant.completed': {
       if (state.active) {
         state.active.content = ev.content;
@@ -617,6 +625,28 @@ function onStreamEvent(ev: StreamEvent): void {
     case 'done':
       state.streaming = false;
       updateRunUi();
+      dismissStaleApproval();
+      break;
+    // Server-side failures. The session chat stream sends these as
+    // well-formed events inside a 200 stream (then `done`), so the
+    // transport never errors and the old code dropped them silently —
+    // the run failed with nothing shown. Surface them like the TUI does.
+    case 'error':
+      state.streaming = false;
+      updateRunUi();
+      addNote(ev.message || 'The run failed.', true);
+      dismissStaleApproval();
+      break;
+    case 'run.failed':
+      state.streaming = false;
+      updateRunUi();
+      addNote(ev.error || 'The run failed.', true);
+      dismissStaleApproval();
+      break;
+    case 'run.cancelled':
+      state.streaming = false;
+      updateRunUi();
+      addNote('The run was cancelled.', false);
       dismissStaleApproval();
       break;
     case 'approval.request':

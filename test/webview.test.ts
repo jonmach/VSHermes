@@ -892,4 +892,41 @@ describe('webview bundle (dist/media/chat.js)', () => {
     expect(note?.textContent).toContain('only available in the Hermes TUI');
     expect(input.value).toBe('');
   });
+
+  it('surfaces a server-side run failure (error event) as a red note', () => {
+    const { dom, post } = bootWebview();
+    post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'error', message: 'upstream timeout after 60s' } } as unknown as HostMsg);
+    const messages = dom.window.document.getElementById('messages')!;
+    const note = messages.querySelector('.error-note');
+    expect(note).not.toBeNull();
+    expect(note!.textContent).toContain('upstream timeout after 60s');
+  });
+
+  it('surfaces a run.failed event as a red note', () => {
+    const { dom, post } = bootWebview();
+    post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'run.failed', error: 'agent run failed: provider 401' } } as unknown as HostMsg);
+    const messages = dom.window.document.getElementById('messages')!;
+    const note = messages.querySelector('.error-note');
+    expect(note).not.toBeNull();
+    expect(note!.textContent).toContain('provider 401');
+  });
+
+  it('clears the streaming state when the run errors (send button reverts to Send)', () => {
+    const { dom, post, sendBtn } = bootWebview();
+    post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
+    expect(sendBtn.textContent).toBe('■');
+    post({ type: 'stream', event: { type: 'error', message: 'boom' } } as unknown as HostMsg);
+    expect(sendBtn.textContent).toBe('➤');
+  });
+
+  it('notes a cancelled run without an error style', () => {
+    const { dom, post } = bootWebview();
+    post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'run.cancelled' } } as unknown as HostMsg);
+    const messages = dom.window.document.getElementById('messages')!;
+    expect(messages.querySelector('.error-note')).toBeNull();
+    expect(messages.querySelector('.info-note')?.textContent).toContain('cancelled');
+  });
 });
