@@ -18,7 +18,7 @@ import type { EndpointProfile } from '../../endpointCore';
 // ── Host → Webview ─────────────────────────────────────────────────
 
 export type HostMessage =
-  | { type: 'state'; connected: boolean; baseUrl: string; remote: boolean; syncReport: SyncReport | null; sessionId: string | null; model: string | null; sessions: SessionSummary[]; slashCommands: SlashCommandDef[]; maxImageBytes: number; maxImageDimension: number }
+  | { type: 'state'; connected: boolean; baseUrl: string; remote: boolean; syncReport: SyncReport | null; sessionId: string | null; model: string | null; sessions: SessionSummary[]; slashCommands: SlashCommandDef[]; steerAvailable: boolean; maxImageBytes: number; maxImageDimension: number }
   | { type: 'session'; session: SessionSummary }
   | { type: 'messages'; sessionId: string; messages: ChatMessage[] }
   | { type: 'sessions'; sessions: SessionSummary[] }
@@ -28,6 +28,7 @@ export type HostMessage =
   | { type: 'lineage'; text: string }
   | { type: 'info'; text: string }
   | { type: 'error'; message: string }
+  | { type: 'steerResult'; note: string; runId: string }
   | { type: 'model'; model: string | null }
   | { type: 'fileResults'; query: string; files: FileEntry[] }
   | { type: 'insertTokens'; tokens: string[] }
@@ -51,6 +52,7 @@ export type WebviewMessage =
   | { type: 'deleteSession'; id: string }
   | { type: 'forkSession' }
   | { type: 'stop' }
+  | { type: 'steer'; note: string }
   | { type: 'approve'; decision: ApprovalDecision }
   | { type: 'setModel'; model: string }
   | { type: 'chooseModel' }

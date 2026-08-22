@@ -1,6 +1,6 @@
 # VSHermes — Hermes Agent chat for VS Code
 
-> One product, current build 2.0.10 — each build re-verified
+> One product, current build 2.0.11 (work in progress) — each build re-verified
 > against the pinned Hermes API surface. This README describes current
 > functionality, not history (see CHANGELOG.md for the change log).
 
@@ -73,12 +73,19 @@ forms](images/chat1.png)
 **Slash commands** (`/` opens the picker — working actions only)
 - Working actions (executed client-side against the API):
   `/new` `/clear` `/model` `/stop` `/history` `/sessions` `/resume`
-  `/title` `/status` `/skills` `/fork` `/branch` `/help`
+  `/title` `/steer` `/status` `/skills` `/fork` `/branch` `/help`
   (`/title My Session` sets the session title via `PATCH /api/sessions/{id}`;
   `/status` shows session info in chat)
-- TUI-only commands (`/compact` `/compress` `/steer` `/goal` `/learn`
+- `/steer <note>` injects guidance into the running agent via
+  `POST /v1/runs/{id}/steer` (Hermes 0.20.4+; a ✎ Steer button appears
+  beside Send while a run is streaming). Accepted steers are recorded in
+  the chat as persistent "✎ steer: <note> — accepted" rows that flip to
+  "delivered" when the run completes (client-side only — the server has no
+  steer persistence). On older servers /steer degrades
+  to the TUI-only block below — it is never sent as text.
+- TUI-only commands (`/compact` `/compress` `/goal` `/learn`
   `/undo` `/yolo` `/rollback` `/diff` …) have no API equivalent — the REST
-  surface has no compress endpoint, no mid-run injection, no goal judge
+  surface has no compress endpoint, no goal judge
   loop, so sending them as text just burns a model turn that explains what
   the TUI command would have done. They are never offered in the picker and
   typed invocations are blocked with a "only available in the Hermes TUI —

@@ -86,6 +86,7 @@ export const MANIFEST: SyncManifest = {
     responses_api: 'OpenAI Responses API',
     responses_streaming: 'Responses API streaming',
     session_resources: 'Session resources (per-session scoped context)',
+    run_steer: 'Run steering (mid-run guidance injection)',
     cors: 'CORS configuration',
   },
   featureDescriptions: {

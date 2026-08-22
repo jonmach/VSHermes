@@ -12,7 +12,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { HermesClient } from '../src/api/client';
+import { HermesApiError, HermesClient } from '../src/api/client';
 import type { StreamEvent } from '../src/api/types';
 
 function loadKeyFromEnvFile(): string | undefined {
@@ -102,5 +102,48 @@ describe.skipIf(!live)('live Hermes API Server', () => {
     expect(run.run_id).toMatch(/^run_/);
     const status = await client.getRun(run.run_id);
     expect(status.run_id).toBe(run.run_id);
+  }, 180_000);
+
+  it('steers a live run mid-stream (0.20.4+ contract)', async () => {
+    const created = await client.createSession();
+    createdIds.push(created.session.id);
+
+    let runId: string | null = null;
+    const steerPromise = new Promise<{ status: number; body: unknown }>((resolve) => {
+      const handle = client.sessionChatStream(
+        created.session.id,
+        'Recursively list every file under /workspace/projects/VSHermes and count them.',
+        (ev) => {
+          if (ev.type === 'run.started' && ev.run_id && !runId) {
+            runId = ev.run_id;
+            // Steer the instant the run is live. The run is guaranteed to
+            // still be running at this point (it just started), so this
+            // must be accepted — unless the model answers before the POST
+            // lands (409), which is tolerated rather than flaky.
+            client
+              .steerRun(ev.run_id, 'Skip the count — just list them.')
+              .then((body) => resolve({ status: 200, body }))
+              .catch(async (e) => {
+                resolve({ status: e.status ?? 0, body: e.message ?? String(e) });
+              });
+          }
+        },
+      );
+      void handle.done;
+    });
+
+    const steer = await steerPromise;
+    expect(runId).not.toBeNull();
+    if (steer.status === 200) {
+      expect(steer.body).toMatchObject({ object: 'hermes.run.steer', accepted: true });
+    } else {
+      // Race: the run finished before the steer POST landed.
+      expect(steer.status).toBe(409);
+    }
+
+    const err = await client.steerRun('run_bogus_123', 'x').catch((e) => e);
+    expect(err).toBeInstanceOf(HermesApiError);
+    expect((err as HermesApiError).status).toBe(404);
+    expect((err as HermesApiError).code).toBe('run_not_found');
   }, 180_000);
 });

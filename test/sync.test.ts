@@ -98,4 +98,25 @@ describe('checkSync', () => {
     expect(r.presentOptionalFeatures).toContain('responses_api');
     expect(r.status).toBe('ok');
   });
+
+  it('knows run_steer — a 0.20.4+ server no longer triggers the ahead message', () => {
+    // The user-facing symptom this regression guards: on Hermes 0.20.5 the
+    // plugin used to show "advertises extra capabilities VSHermes does not
+    // use: run_steer". Now that /steer is implemented, run_steer is a known
+    // optional feature and the verdict is plain ok.
+    const caps = capsWith({ features: { run_steer: true } });
+    const r = checkSync({ ...HEALTH, version: '0.20.5' }, caps, MANIFEST, '0.1.0');
+    expect(r.status).toBe('ok');
+    expect(r.unknownFeatures).toEqual([]);
+    expect(r.presentOptionalFeatures).toContain('run_steer');
+    expect(r.messages.join(' ')).not.toContain('extra capabilities');
+  });
+
+  it('does not require run_steer (steer is optional — old servers stay ok)', () => {
+    // The mock is the 0.20.0 baseline: no run_steer advertised, and that
+    // must NOT be treated as outdated — /steer just degrades gracefully.
+    const r = checkSync(HEALTH, MOCK_CAPABILITIES, MANIFEST, '0.1.0');
+    expect(r.status).toBe('ok');
+    expect(r.missingRequiredFeatures).not.toContain('run_steer');
+  });
 });

@@ -312,6 +312,14 @@ export class HermesClient {
     });
   }
 
+  /** POST /v1/runs/{runId}/steer — inject guidance into a running agent (0.20.4+). */
+  steerRun(runId: string, input: string): Promise<unknown> {
+    return this.request(`/v1/runs/${encodeURIComponent(runId)}/steer`, {
+      method: 'POST',
+      body: JSON.stringify({ input }),
+    });
+  }
+
   approveRun(runId: string, decision: ApprovalDecision): Promise<unknown> {
     // The API server reads the `choice` field (values: once/session/always/
     // deny) — sending `decision` made every approval fail with 400

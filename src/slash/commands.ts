@@ -34,6 +34,7 @@ export type SlashHandlerId =
   | 'help'
   | 'fork'
   | 'set-title'
+  | 'steer'
   | 'status'
   | 'toolsets'
   | 'version'
@@ -49,6 +50,7 @@ export const SLASH_COMMANDS: SlashCommandDef[] = [
   { name: 'sessions', summary: 'Show session history', kind: 'action', handler: 'history' },
   { name: 'resume', summary: 'Show session history to continue a past session', kind: 'action', handler: 'history' },
   { name: 'title', summary: 'Set a title for the current session', args: '[name]', kind: 'action', handler: 'set-title' },
+  { name: 'steer', summary: 'Inject guidance into the running agent', args: '[note]', kind: 'action', handler: 'steer' },
   { name: 'status', summary: 'Show current session info (id, title, model, messages)', kind: 'action', handler: 'status' },
   { name: 'skills', summary: 'List skills visible to Hermes', kind: 'action', handler: 'skills' },
   { name: 'fork', summary: 'Fork the current session', kind: 'action', handler: 'fork' },
@@ -67,7 +69,6 @@ export const SLASH_COMMANDS: SlashCommandDef[] = [
   { name: 'personality', summary: 'Switch personality (TUI-only)', kind: 'unsupported' },
   { name: 'save', summary: 'Save the current conversation (TUI-only)', kind: 'unsupported' },
   { name: 'queue', summary: 'Queue a prompt for the next turn (TUI-only)', kind: 'unsupported' },
-  { name: 'steer', summary: 'Inject a mid-run note (TUI-only)', kind: 'unsupported' },
   { name: 'goal', summary: 'Set a standing goal Hermes works toward (TUI-only)', kind: 'unsupported' },
   { name: 'learn', summary: 'Distill a reusable skill from anything you describe (TUI-only)', kind: 'unsupported' },
   { name: 'undo', summary: 'Undo last message (TUI-only)', kind: 'unsupported' },
@@ -111,7 +112,7 @@ export interface SlashMatch {
  * start of the input or after whitespace, and the command token is a plain
  * word (letters/digits/_/-).
  */
-export function matchSlash(input: string): SlashMatch | null {
+export function matchSlash(input: string, catalog: SlashCommandDef[] = SLASH_COMMANDS): SlashMatch | null {
   const m = /(^|\s)\/([a-zA-Z][a-zA-Z0-9_-]*)(\s.*)?$/.exec(input.trimEnd());
   if (!m) return null;
   const name = m[2].toLowerCase();
@@ -120,7 +121,7 @@ export function matchSlash(input: string): SlashMatch | null {
     input,
     name,
     args,
-    def: SLASH_COMMANDS.find((c) => c.name === name),
+    def: catalog.find((c) => c.name === name),
   };
 }
 
@@ -140,11 +141,14 @@ export const TUI_ONLY_BLOCKED = new Set(['compress', 'compact']);
  * mentions ("can you /goal that") and unknown commands pass through
  * unchanged — only a real leading command invocation is intercepted.
  */
-export function blockedSlashCommand(input: string): SlashMatch | null {
+export function blockedSlashCommand(
+  input: string,
+  catalog: SlashCommandDef[] = SLASH_COMMANDS,
+): SlashMatch | null {
   const m = /^\/([a-zA-Z][a-zA-Z0-9_-]*)(?:\s+(.*))?$/.exec(input.trim());
   if (!m) return null;
   const name = m[1].toLowerCase();
-  const def = SLASH_COMMANDS.find((c) => c.name === name);
+  const def = catalog.find((c) => c.name === name);
   if (def && def.kind !== 'action') {
     return { input, name, args: (m[2] ?? '').trim(), def };
   }
@@ -154,10 +158,10 @@ export function blockedSlashCommand(input: string): SlashMatch | null {
   return null;
 }
 
-export function filterSlash(query: string, limit = 8): SlashCommandDef[] {
+export function filterSlash(query: string, limit = 8, catalog: SlashCommandDef[] = SLASH_COMMANDS): SlashCommandDef[] {
   const q = query.toLowerCase();
-  if (!q) return SLASH_COMMANDS.slice(0, limit);
-  const scored = SLASH_COMMANDS.map((c) => {
+  if (!q) return catalog.slice(0, limit);
+  const scored = catalog.map((c) => {
     let score = -1;
     if (c.name.startsWith(q)) score = 100 - c.name.length;
     else if (c.name.includes(q)) score = 50 - c.name.length;

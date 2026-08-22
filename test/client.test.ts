@@ -124,6 +124,12 @@ describe('HermesClient (against contract mock)', () => {
     expect(stopped).toEqual({ ok: true });
   });
 
+  it('steers a run (live-verified 0.20.4+ contract)', async () => {
+    const run = await client.createRun('hermes-agent', 'PONG');
+    const res = await client.steerRun(run.run_id, 'focus on the failing test');
+    expect(res).toEqual({ object: 'hermes.run.steer', run_id: run.run_id, accepted: true });
+  });
+
   it('resolves an approval', async () => {
     const run = await client.createRun('hermes-agent', 'PONG');
     const res = await client.approveRun(run.run_id, 'once');

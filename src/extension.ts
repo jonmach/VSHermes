@@ -38,7 +38,7 @@ import {
   setEndpointApiKey,
 } from './config';
 import { canonicalUrl, hostLabel, isRemoteUrl, LOCAL_ENDPOINT_ID, makeEndpointId, normalizeUrl } from './endpointCore';
-import { SLASH_COMMANDS, SlashHandlerId } from './slash/commands';
+import { SLASH_COMMANDS, type SlashCommandDef, type SlashHandlerId } from './slash/commands';
 import { currentServerTarget, sessionTargetFromArg, type SessionTarget } from './sessionArg';
 import { StatusBar } from './statusbar';
 import { resolveHermesEnv } from './hermesEnv';
@@ -243,7 +243,7 @@ class VSHermes {
       sessionId: this.sessionId,
       model: this.caps?.model ?? null,
       sessions: [],
-      slashCommands: SLASH_COMMANDS,
+      slashCommands: this.slashCatalog(), steerAvailable: this.steerAvailable,
       maxImageBytes: getMaxImageBytes(),
       maxImageDimension: getMaxImageDimension(),
     };
@@ -579,7 +579,7 @@ class VSHermes {
         }
         this.view.post({
           type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport,
-          sessionId: this.sessionId, model, sessions: [], slashCommands: SLASH_COMMANDS,
+          sessionId: this.sessionId, model, sessions: [], slashCommands: this.slashCatalog(), steerAvailable: this.steerAvailable,
           maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension(),
         });
         this.view.postInfo('Reconnected to Hermes.');
@@ -593,7 +593,7 @@ class VSHermes {
         this.statusBar.offline('gateway unreachable');
         this.view.post({
           type: 'state', connected: false, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport,
-          sessionId: this.sessionId, model: null, sessions: [], slashCommands: SLASH_COMMANDS,
+          sessionId: this.sessionId, model: null, sessions: [], slashCommands: this.slashCatalog(), steerAvailable: this.steerAvailable,
           maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension(),
         });
         void this.refreshEndpointsPanel();
@@ -1000,7 +1000,7 @@ class VSHermes {
       const res = await c.createSession();
       this.sessionId = res.session.id;
       this.activeRunId = null;
-      this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport, sessionId: this.sessionId, model: res.session.model, sessions: [], slashCommands: SLASH_COMMANDS, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
+      this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport, sessionId: this.sessionId, model: res.session.model, sessions: [], slashCommands: this.slashCatalog(), steerAvailable: this.steerAvailable, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
       void this.listSessions();
     } catch (err) {
       this.reportError(err);
@@ -1019,7 +1019,7 @@ class VSHermes {
       ]);
       this.postTranscript(id, msgs.data);
       void this.postLineageNotice(session?.session ?? null);
-      this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport, sessionId: id, model: session?.session.model ?? null, sessions: [], slashCommands: SLASH_COMMANDS, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
+      this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport, sessionId: id, model: session?.session.model ?? null, sessions: [], slashCommands: this.slashCatalog(), steerAvailable: this.steerAvailable, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
       this.focusChat();
     } catch (err) {
       this.reportError(err);
@@ -1040,7 +1040,7 @@ class VSHermes {
       await c.deleteSession(target);
       if (this.sessionId === target) {
         this.sessionId = null;
-        this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport, sessionId: null, model: null, sessions: [], slashCommands: SLASH_COMMANDS, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
+        this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport, sessionId: null, model: null, sessions: [], slashCommands: this.slashCatalog(), steerAvailable: this.steerAvailable, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
       }
       void this.listSessions();
     } catch (err) {
@@ -1164,6 +1164,9 @@ class VSHermes {
     if (event.type === 'run.started' && event.run_id) {
       this.activeRunId = event.run_id;
       this.logInfo(`run started: ${event.run_id}`);
+    } else if (event.type === 'run.completed' || event.type === 'run.cancelled') {
+      // The run is over — a late /steer must not hit a stale id.
+      this.activeRunId = null;
     }
     this.view.post({ type: 'stream', event });
   }
@@ -1238,6 +1241,72 @@ class VSHermes {
       void this.ensureClient()
         .then((c) => c.stopRun(runId))
         .catch(() => undefined);
+    }
+  }
+
+  /** True when the connected server advertises run steering (Hermes 0.20.4+). */
+  private get steerAvailable(): boolean {
+    return this.caps?.features?.run_steer === true;
+  }
+
+  /** Catalog with /steer demoted to unsupported on servers without run_steer —
+   * the picker then hides it and a typed invocation is blocked locally. */
+  private slashCatalog(): SlashCommandDef[] {
+    if (this.steerAvailable) return SLASH_COMMANDS;
+    return SLASH_COMMANDS.map((c) =>
+      c.name === 'steer' ? { ...c, kind: 'unsupported' as const, handler: undefined } : c,
+    );
+  }
+
+  /** /steer — inject guidance into the running agent via POST /v1/runs/{id}/steer. */
+  private async steer(rawNote: string): Promise<void> {
+    const note = rawNote.trim();
+    const runId = this.activeRunId;
+    if (!runId) {
+      this.logInfo('steer: no active run');
+      this.view.postInfo('No active run to steer.');
+      return;
+    }
+    if (!this.steerAvailable) {
+      this.logInfo('steer: server lacks run_steer');
+      this.view.postInfo('Steering is not available on this Hermes server (0.20.4+ required).');
+      return;
+    }
+    let text = note;
+    if (!text) {
+      this.logInfo('steer: prompting for note');
+      text =
+        (await vscode.window.showInputBox({
+          prompt: 'Guidance for the running agent',
+          placeHolder: 'e.g. Focus on the failing test first',
+        }))?.trim() ?? '';
+      if (!text) {
+        this.logInfo('steer: prompt cancelled');
+        return;
+      }
+    }
+    this.logInfo(`steer: POST /v1/runs/${runId}/steer (${text.length} chars)`);
+    try {
+      const c = await this.ensureClient();
+      await c.steerRun(runId, text);
+      this.logInfo('steer: accepted');
+      // Persistent record: the webview renders "✎ steer: <note> — accepted"
+      // (flips to "delivered" when the run completes) and anchors it before
+      // this run's response so the timeline stays readable after the
+      // post-run transcript rebuild. Replaces the old transient
+      // "Steer note accepted." note, which vanished on the rebuild.
+      this.view.post({ type: 'steerResult', note: text, runId });
+    } catch (err) {
+      // A run that just finished or was stopped rejects steer with 409
+      // (not accepting) or 404 (gone). The click is simply too late — say
+      // so plainly instead of surfacing the raw API error.
+      if (err instanceof HermesApiError && (err.status === 409 || err.status === 404)) {
+        this.logInfo(`steer: rejected (${err.status})`);
+        this.view.postInfo('The run is no longer accepting steer input — it finished or was stopped.');
+        return;
+      }
+      this.logInfo(`steer: error — ${(err as Error).message}`);
+      this.reportError(err);
     }
   }
 
@@ -1340,6 +1409,10 @@ class VSHermes {
       case 'stop':
         this.stop();
         break;
+      case 'steer':
+        this.logInfo(`steer received (note: ${msg.note.length} chars)`);
+        await this.steer(msg.note);
+        break;
       case 'approve':
         await this.approve(msg.decision);
         break;
@@ -1409,6 +1482,9 @@ class VSHermes {
         break;
       case 'stop':
         this.stop();
+        break;
+      case 'steer':
+        await this.steer('');
         break;
       case 'history':
         this.focusHistory();

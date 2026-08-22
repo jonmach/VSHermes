@@ -292,8 +292,13 @@ export class MockHermesServer {
       this.json(res, 202, { run_id: 'run_test_created', status: 'started' });
       return;
     }
-    const runM = path.match(/^\/v1\/runs\/([^/]+)\/(stop|approval)$/);
+    const runM = path.match(/^\/v1\/runs\/([^/]+)\/(stop|approval|steer)$/);
     if (runM && method === 'POST') {
+      if (runM[2] === 'steer') {
+        // Live-verified 0.20.4+ shape: accepted verdict, not the generic ok.
+        this.json(res, 200, { object: 'hermes.run.steer', run_id: runM[1], accepted: true });
+        return;
+      }
       this.json(res, 200, { ok: true });
       return;
     }

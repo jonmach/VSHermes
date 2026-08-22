@@ -8,7 +8,13 @@
 
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
-import { blockedSlashCommand, filterSlash, matchSlash, type SlashCommandDef } from '../../slash/commands';
+import {
+  blockedSlashCommand,
+  filterSlash,
+  matchSlash,
+  SLASH_COMMANDS,
+  type SlashCommandDef,
+} from '../../slash/commands';
 import type { SyncReport } from '../../api/sync';
 import type {
   ApprovalDecision,
@@ -57,6 +63,7 @@ const messagesEl = $('#messages');
 const inputEl = $('#input') as HTMLTextAreaElement;
 const inputAreaEl = $('#input-area');
 const sendBtn = $('#send-btn') as HTMLButtonElement;
+const steerBtn = $('#steer-btn') as HTMLButtonElement;
 const attachBtn = $('#attach-btn') as HTMLButtonElement;
 const chipsEl = $('#chips');
 const slashPopup = $('#slash-popup');
@@ -87,12 +94,34 @@ interface RenderMsg {
   tools: Map<string, ToolCard>;
 }
 
+/**
+ * A steer the user injected into a run. Rendered as a persistent "✎ steer:"
+ * row that survives transcript rebuilds (the server does not persist steers
+ * — no message write-back — so the record is client-side only).
+ * status: 'accepted' = server returned 200; 'delivered' = the run completed
+ * after the steer (we do NOT claim the model acted on it — unverifiable).
+ */
+interface SteerRecord {
+  id: number;
+  note: string;
+  ts: number;
+  /** Run the steer was accepted into — anchors the row before that run's
+   *  first assistant message so the timeline survives transcript rebuilds. */
+  runId: string;
+  /** Assistant-message seq to insert BEFORE (run's first message, or the
+   *  upcoming one if the run's message hadn't started yet). */
+  anchorSeq: number;
+  status: 'accepted' | 'delivered';
+}
+
 const state: {
   connected: boolean;
   sessionId: string | null;
   remote: boolean;
   slashCommands: SlashCommandDef[];
   syncReport: SyncReport | null;
+  /** Server advertises run_steer (Hermes 0.20.4+) — show the Steer button. */
+  steerAvailable: boolean;
   streaming: boolean;
   messages: RenderMsg[];
   active: RenderMsg | null;
@@ -134,12 +163,23 @@ const state: {
   mentionKind: 'ref' | 'attach';
   maxImageBytes: number;
   maxImageDimension: number;
+  /** Accepted steers in this session view, oldest first. */
+  steerRecords: SteerRecord[];
+  steerSeq: number;
+  /** Assistant-message sequence counter (increments on every message.started).
+   *  Stable across the stream/transcript boundary — message IDs are NOT
+   *  (stream msg_* ids differ from stored numeric ids), so anchors use
+   *  sequence, never ids. */
+  assistantSeq: number;
+  /** First assistant-message seq per run — steer rows anchor before it. */
+  runAnchorSeq: Map<string, number>;
 } = {
   connected: false,
   sessionId: null,
   remote: false,
   slashCommands: [],
   syncReport: null,
+  steerAvailable: false,
   streaming: false,
   messages: [],
   active: null,
@@ -163,7 +203,20 @@ const state: {
   mentionKind: 'ref',
   maxImageBytes: 8 * 1024 * 1024,
   maxImageDimension: 4096,
+  steerRecords: [],
+  steerSeq: 0,
+  assistantSeq: 0,
+  runAnchorSeq: new Map(),
 };
+
+/**
+ * The catalog the host sent (server-gated: /steer demoted to unsupported
+ * when the server lacks run_steer). Falls back to the static catalog until
+ * the first state message arrives.
+ */
+function effectiveCatalog(): SlashCommandDef[] {
+  return state.slashCommands.length > 0 ? state.slashCommands : SLASH_COMMANDS;
+}
 
 // ── markdown ───────────────────────────────────────────────────────
 
@@ -553,6 +606,43 @@ function renderLineageNote(): void {
   state.messages.push({ el, kind: 'note', tools: new Map() });
 }
 
+/**
+ * Persistent steer records — re-rendered after every transcript rebuild so
+ * the "✎ steer:" rows never vanish (idempotent per record id). Each row is
+ * anchored before its run's first assistant message: the steer happened
+ * before that response, and the placement must survive the rebuild.
+ */
+function steerRowText(rec: SteerRecord): string {
+  const d = new Date(rec.ts);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `✎ steer ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} — ${rec.note} — ${rec.status}`;
+}
+
+function renderSteerRecords(): void {
+  // Status flips (accepted → delivered) update existing rows in place.
+  for (const el of Array.from(messagesEl.querySelectorAll('.steer-note'))) {
+    const rec = state.steerRecords.find((r) => r.id === Number(el.getAttribute('data-id')));
+    if (rec) el.textContent = steerRowText(rec);
+  }
+  for (const rec of state.steerRecords) {
+    if (messagesEl.querySelector(`.steer-note[data-id="${rec.id}"]`)) continue;
+    const el = document.createElement('div');
+    el.className = 'steer-note';
+    el.dataset.id = String(rec.id);
+    el.textContent = steerRowText(rec);
+    // Anchor before the run's first assistant message (by sequence — ids
+    // differ between the stream and the stored transcript). Falls back to
+    // the bottom during live streaming (anchor element not in the DOM yet)
+    // and for streams without a tracked seq — never a crash.
+    const anchor = messagesEl.querySelector(`[data-msg-seq="${rec.anchorSeq}"]`);
+    if (anchor) {
+      messagesEl.insertBefore(el, anchor);
+    } else {
+      messagesEl.appendChild(el);
+    }
+  }
+}
+
 function scrollBottom(): void {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
@@ -568,9 +658,13 @@ function renderMessages(messages: ChatMessage[], sessionId?: string | null): voi
   const prevTop = messagesEl.scrollTop;
   const prevHeight = messagesEl.scrollHeight;
   // Failure notes are scoped to the session they occurred in — a different
-  // session's transcript must not inherit them.
+  // session's transcript must not inherit them. Steer records are likewise
+  // client-side view state for the current session.
   if (sessionId && sessionId !== state.sessionId) {
     state.persistentErrorNotes = [];
+    state.steerRecords = [];
+    state.assistantSeq = 0;
+    state.runAnchorSeq.clear();
   }
   messagesEl.innerHTML = '';
   state.messages = [];
@@ -593,16 +687,24 @@ function renderMessages(messages: ChatMessage[], sessionId?: string | null): voi
   }
   let toolResultCursor = 0;
 
+  let assistantOrdinal = 0;
   for (const m of messages) {
     if (m.role === 'user') {
       const content = m.content ?? '';
       const images = [...extractImages(content), ...extractMarkdownImages(content)].slice(0, 4);
       const text = stripImageTokens(content);
       const msg = addUserMessage(text, images);
+      if (m.id !== undefined && m.id !== null) msg.el.dataset.msgId = String(m.id);
       const bubble = msg.el.querySelector('.bubble');
       if (bubble) bubble.textContent = text;
     } else if (m.role === 'assistant') {
       const msg = addAssistantMessage();
+      // Stamp the assistant ordinal so steer rows can anchor by sequence.
+      // Ordinals count from 1 per render — the transcript's assistant
+      // messages appear in the same order the stream started them, and ids
+      // differ between the two, so seq (not id) is the stable anchor.
+      assistantOrdinal += 1;
+      msg.el.dataset.msgSeq = String(assistantOrdinal);
       msg.content = m.content ?? '';
       if (msg.content) setContent(msg.contentEl!, msg.content);
       else msg.contentEl!.textContent = '…';
@@ -647,6 +749,10 @@ function renderMessages(messages: ChatMessage[], sessionId?: string | null): voi
       }
     }
   }
+  // Keep the live counter in sync with the rendered transcript: the next
+  // streamed message continues the sequence (message.started increments it
+  // from here).
+  state.assistantSeq = assistantOrdinal;
   // Re-attach per-turn usage lines recorded during streaming. The host
   // re-posts the full transcript after every run (refreshSessionAfterRun),
   // which rebuilds this list from stored messages — the lines appended
@@ -663,6 +769,8 @@ function renderMessages(messages: ChatMessage[], sessionId?: string | null): voi
   for (const note of state.persistentErrorNotes) {
     addNote(note, true);
   }
+  // Re-attach steer records — the server does not persist steers either.
+  renderSteerRecords();
   if (atBottom) {
     scrollBottom();
   } else if (prevHeight > 0) {
@@ -766,6 +874,15 @@ function onStreamEvent(ev: StreamEvent): void {
       state.turnDeltaCount = 0;
       state.turnToolCount = 0;
       state.active = addAssistantMessage();
+      // Sequence anchor: every assistant message gets a stable ordinal
+      // (stream and transcript count in the same order). Steer rows anchor
+      // to the run's first message seq — message IDs are NOT stable across
+      // the stream/transcript boundary, so never anchor on ids.
+      state.assistantSeq += 1;
+      state.active.el.dataset.msgSeq = String(state.assistantSeq);
+      if (ev.run_id && !state.runAnchorSeq.has(ev.run_id)) {
+        state.runAnchorSeq.set(ev.run_id, state.assistantSeq);
+      }
       break;
     case 'assistant.delta': {
       state.turnDeltaCount += 1;
@@ -872,6 +989,13 @@ function onStreamEvent(ev: StreamEvent): void {
       state.streaming = false;
       updateRunUi();
       dismissStaleApproval();
+      // Steers accepted during the run are now delivered — the run that
+      // received them has completed. (We do not claim the model acted on
+      // them; 'delivered' means they were in the context the run used.)
+      if (state.steerRecords.some((r) => r.status === 'accepted')) {
+        for (const r of state.steerRecords) r.status = 'delivered';
+        renderSteerRecords();
+      }
       break;
     // Server-side failures. The session chat stream sends these as
     // well-formed events inside a 200 stream (then `done`), so the
@@ -909,6 +1033,8 @@ function updateRunUi(): void {
   // so it is never disabled here (the click handler routes to stop/send).
   sendBtn.textContent = state.streaming ? '■' : '➤';
   sendBtn.title = state.streaming ? 'Stop' : 'Send';
+  // Steer is only meaningful while a run is live AND the server supports it.
+  steerBtn.style.display = state.streaming && state.steerAvailable ? '' : 'none';
 }
 
 // ── approval dialog ────────────────────────────────────────────────
@@ -1063,7 +1189,7 @@ function renderSlashItems(query: string): void {
   // The picker only offers commands that actually do something — TUI-only
   // entries stay in the catalog as blocked/reference, but are never shown
   // as pickable (they would just produce a "TUI-only" note on click).
-  const items = filterSlash(query).filter((c) => c.kind === 'action');
+  const items = filterSlash(query, 8, effectiveCatalog()).filter((c) => c.kind === 'action');
   state.slashIndex = Math.min(state.slashIndex, Math.max(items.length - 1, 0));
   slashPopup.innerHTML = '';
   items.forEach((c, i) => {
@@ -1188,6 +1314,11 @@ function runSlashAction(c: SlashCommandDef): void {
       // then Enter posts setTitle with the args (see keydown handler).
       inputEl.value += '/title ';
       break;
+    case 'steer':
+      // Same pattern as /title: "/steer " stays in the input so the note
+      // can be typed, then Enter posts steer with the args.
+      inputEl.value += '/steer ';
+      break;
     case 'status':
       post({ type: 'showStatus' });
       break;
@@ -1210,7 +1341,7 @@ async function sendNow(textOverride?: string): Promise<void> {
   // TUI-only commands have no API equivalent — sending them as text just
   // burns a model turn that explains what the TUI command would have done.
   // Block locally and never send anything to the LLM.
-  const blocked = blockedSlashCommand(text);
+  const blocked = blockedSlashCommand(text, effectiveCatalog());
   if (blocked) {
     addNote(
       `/${blocked.name} is only available in the Hermes TUI — not through the API server. Nothing was sent.`,
@@ -1269,6 +1400,7 @@ function onHostMessage(msg: HostMessage): void {
       }
       state.sessionId = msg.sessionId;
       state.syncReport = msg.syncReport;
+      state.steerAvailable = msg.steerAvailable;
       state.maxImageBytes = msg.maxImageBytes;
       state.maxImageDimension = msg.maxImageDimension;
       if (msg.slashCommands.length > 0) state.slashCommands = msg.slashCommands;
@@ -1310,6 +1442,24 @@ function onHostMessage(msg: HostMessage): void {
       break;
     case 'info':
       addNote(msg.text);
+      break;
+    case 'steerResult':
+      // Persistent record of an accepted steer (host sends this only on a
+      // 200). Rendered as "✎ steer HH:MM:SS — <note> — accepted", flipping
+      // to "delivered" when the run completes, anchored before the run's
+      // response (by assistant-message sequence — ids are not stable
+      // across the stream/transcript boundary).
+      state.steerRecords.push({
+        id: ++state.steerSeq,
+        note: msg.note,
+        ts: Date.now(),
+        runId: msg.runId,
+        // The run's first message seq if it already started, else the seq
+        // the upcoming message will get.
+        anchorSeq: state.runAnchorSeq.get(msg.runId) ?? state.assistantSeq + 1,
+        status: 'accepted',
+      });
+      renderSteerRecords();
       break;
     case 'error':
       addNote(msg.message, true);
@@ -1370,7 +1520,7 @@ inputEl.addEventListener('keydown', (e) => {
           return;
         }
       } else {
-        const items = filterSlash(state.slashQuery).filter((c) => c.kind === 'action');
+        const items = filterSlash(state.slashQuery, 8, effectiveCatalog()).filter((c) => c.kind === 'action');
         const c = items[state.slashIndex];
         if (c) {
           e.preventDefault();
@@ -1386,11 +1536,18 @@ inputEl.addEventListener('keydown', (e) => {
   }
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
-    const m = matchSlash(inputEl.value.trim());
+    const m = matchSlash(inputEl.value.trim(), effectiveCatalog());
     if (m && m.def && m.def.kind === 'action') {
       if (m.def.handler === 'set-title') {
         // "/title My Session" — post the args (empty args → host prompts).
         post({ type: 'setTitle', title: m.args });
+        inputEl.value = '';
+        return;
+      }
+      if (m.def.handler === 'steer') {
+        // "/steer focus on the failing test" — post the note (empty args
+        // → host prompts). Steering targets the active run server-side.
+        post({ type: 'steer', note: m.args });
         inputEl.value = '';
         return;
       }
@@ -1536,6 +1693,28 @@ sendBtn.addEventListener('click', () => {
     post({ type: 'stop' });
   } else {
     void sendNow();
+  }
+});
+
+steerBtn.addEventListener('click', () => {
+  const text = inputEl.value.trim();
+  if (text) {
+    // The typed text IS the steer note — no hidden host prompt. Trace the
+    // click so a silent failure can never happen again (host logs diag).
+    post({ type: 'diag', level: 'info', message: `steer button: sending input (${text.length} chars)` });
+    post({ type: 'steer', note: text });
+    inputEl.value = '';
+    resizeInput();
+    hideSlashPopup();
+  } else {
+    // Empty input → visible in-panel prompt: "/steer " appears in the chat
+    // input, the user types the note, Enter posts it (existing path). If
+    // this insertion never appears, the click itself did not fire.
+    post({ type: 'diag', level: 'info', message: 'steer button: empty input, inserting /steer' });
+    inputEl.value += '/steer ';
+    resizeInput();
+    inputEl.focus();
+    updatePopup();
   }
 });
 

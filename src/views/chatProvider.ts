@@ -172,6 +172,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     #input:focus { border-color: var(--vsh-accent); }
     #send-btn { background: var(--vsh-accent); color: #fff; border: none; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-weight: 600; }
     #send-btn:disabled { opacity: 0.5; cursor: default; }
+    #steer-btn { background: none; color: var(--vsh-accent); border: 1px solid var(--vsh-accent); border-radius: 6px; padding: 7px 10px; cursor: pointer; font-size: 13px; line-height: 1.2; flex: none; }
+    #steer-btn:hover { background: var(--vsh-border); }
+    .steer-note { color: var(--vsh-accent); font-style: italic; padding: 2px 4px; opacity: 0.9; }
     #slash-popup { position: absolute; bottom: 100%; left: 8px; right: 8px; max-height: 240px; overflow-y: auto; background: var(--vscode-editorWidget-background, #252526); border: 1px solid var(--vsh-border); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.35); display: none; z-index: 10; }
     #slash-popup.show { display: block; }
     .slash-item { padding: 6px 10px; cursor: pointer; display: flex; gap: 8px; align-items: baseline; }
@@ -215,6 +218,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     <div id="input-row">
       <button id="attach-btn" title="Attach file(s) — copied into the session attachments" aria-label="Attach file(s)"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 6v11.5a4 4 0 0 1-4 4 4 4 0 0 1-4-4V5a2.5 2.5 0 0 1 5 0v10.5a1 1 0 0 1-2 0V6H10v9.5a2.5 2.5 0 0 0 5 0V6a4 4 0 0 0-8 0v11.5a5.5 5.5 0 0 0 11 0V6h-1.5z"/></svg></button>
       <textarea id="input" rows="1" placeholder="Message Hermes… (drag files to attach)"></textarea>
+      <button id="steer-btn" title="Inject guidance into the running agent" aria-label="Steer the running agent" style="display:none">✎</button>
       <button id="send-btn">&#10148;</button>
     </div>
   </div>

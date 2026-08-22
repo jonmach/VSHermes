@@ -52,9 +52,10 @@ describe('filterSlash', () => {
     expect(SLASH_COMMANDS.find((c) => c.name === 'yolo')?.kind).toBe('unsupported');
     // Former "informational" entries were reclassified after live
     // verification: sent as text they burn a turn that explains the TUI
-    // command back (probe: /steer → "there's nothing to steer with", /goal
-    // → "no goal text") without ever executing the mechanism.
-    for (const name of ['retry', 'personality', 'save', 'queue', 'steer', 'goal', 'learn']) {
+    // command back (probe: /goal → "no goal text") without ever executing
+    // the mechanism. /steer is the exception — it was promoted to a real
+    // action once Hermes 0.20.4 added POST /v1/runs/{id}/steer.
+    for (const name of ['retry', 'personality', 'save', 'queue', 'goal', 'learn']) {
       expect(SLASH_COMMANDS.find((c) => c.name === name)?.kind).toBe('unsupported');
     }
   });
@@ -69,12 +70,37 @@ describe('filterSlash', () => {
   });
 
   it('blocks leading TUI-only invocations from reaching the model', () => {
-    expect(blockedSlashCommand('/steer')).not.toBeNull();
     expect(blockedSlashCommand('/goal make the tests pass')).not.toBeNull();
     expect(blockedSlashCommand('/undo')).not.toBeNull();
     // Removed-from-catalog commands stay blocked via TUI_ONLY_BLOCKED.
     expect(blockedSlashCommand('/compress')?.name).toBe('compress');
     expect(blockedSlashCommand('/compact')?.name).toBe('compact');
+  });
+
+  it('promotes /steer to a working action (0.20.4+ run steering)', () => {
+    const steer = SLASH_COMMANDS.find((c) => c.name === 'steer');
+    expect(steer?.kind).toBe('action');
+    expect(steer?.handler).toBe('steer');
+    expect(steer?.args).toBe('[note]');
+    const m = matchSlash('/steer focus on the failing test');
+    expect(m?.name).toBe('steer');
+    expect(m?.args).toBe('focus on the failing test');
+    expect(m?.def?.handler).toBe('steer');
+    // A real action passes the block guard (it is NOT sent as text).
+    expect(blockedSlashCommand('/steer focus on the failing test')).toBeNull();
+  });
+
+  it('demotes /steer to unsupported when the server catalog lacks it', () => {
+    // The host sends the static catalog with /steer flipped to unsupported
+    // on servers without run_steer (< 0.20.4). The webview then hides it
+    // from the picker and blocks typed invocations locally.
+    const gated = SLASH_COMMANDS.map((c) =>
+      c.name === 'steer' ? { ...c, kind: 'unsupported' as const, handler: undefined } : c,
+    );
+    expect(gated.find((c) => c.name === 'steer')?.kind).toBe('unsupported');
+    expect(matchSlash('/steer hi', gated)?.def?.kind).toBe('unsupported');
+    expect(blockedSlashCommand('/steer hi', gated)?.name).toBe('steer');
+    expect(filterSlash('steer', 8, gated).some((c) => c.kind === 'action')).toBe(false);
   });
 
   it('lets actions, unknown commands, and mid-sentence mentions through', () => {

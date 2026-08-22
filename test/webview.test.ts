@@ -29,6 +29,7 @@ const WEBVIEW_HTML = `<!DOCTYPE html><html><body>
     <div id="chips"></div>
     <textarea id="input"></textarea>
     <button id="attach-btn"></button>
+    <button id="steer-btn"></button>
     <button id="send-btn"></button>
   </div>
 </body></html>`;
@@ -413,6 +414,269 @@ describe('webview bundle (dist/media/chat.js)', () => {
     sendBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
     expect(sent.some((m) => m.type === 'stop')).toBe(true);
     expect(sent.some((m) => m.type === 'send')).toBe(false);
+  });
+
+  it('shows the steer button only while streaming on a run_steer server', () => {
+    const { dom, post } = bootWebview();
+    const steerBtn = dom.window.document.getElementById('steer-btn') as HTMLButtonElement;
+    const base = {
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      syncReport: null,
+      sessionId: 's1',
+      model: 'm1',
+      sessions: [],
+      slashCommands: [],
+      steerAvailable: true,
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    };
+    post(base as unknown as HostMsg);
+    // idle → hidden
+    expect(steerBtn.style.display).toBe('none');
+    // streaming + steer available → visible
+    post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
+    expect(steerBtn.style.display).not.toBe('none');
+    // run over → hidden again (real sequence: run.completed then done)
+    post({
+      type: 'stream',
+      event: { type: 'run.completed', completed: true, messages: [] },
+    } as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'done' } } as unknown as HostMsg);
+    expect(steerBtn.style.display).toBe('none');
+  });
+
+  it('keeps the steer button hidden when the server lacks run_steer', () => {
+    const { dom, post } = bootWebview();
+    const steerBtn = dom.window.document.getElementById('steer-btn') as HTMLButtonElement;
+    const base = {
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      syncReport: null,
+      sessionId: 's1',
+      model: 'm1',
+      sessions: [],
+      slashCommands: [],
+      steerAvailable: false,
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    };
+    post(base as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
+    expect(steerBtn.style.display).toBe('none');
+  });
+
+  it('steer button click sends the typed input as the note and clears it', () => {
+    const { dom, sent, post, input } = bootWebview();
+    const steerBtn = dom.window.document.getElementById('steer-btn') as HTMLButtonElement;
+    post({
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      syncReport: null,
+      sessionId: 's1',
+      model: 'm1',
+      sessions: [],
+      slashCommands: [],
+      steerAvailable: true,
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    } as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
+    input.value = 'focus on the failing test';
+    steerBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    expect(sent.some((m) => m.type === 'steer' && m.note === 'focus on the failing test')).toBe(true);
+    expect(input.value).toBe('');
+  });
+
+  it('steer button click with empty input inserts "/steer " instead of posting', () => {
+    const { dom, sent, post, input } = bootWebview();
+    const steerBtn = dom.window.document.getElementById('steer-btn') as HTMLButtonElement;
+    post({
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      syncReport: null,
+      sessionId: 's1',
+      model: 'm1',
+      sessions: [],
+      slashCommands: [],
+      steerAvailable: true,
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    } as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
+    steerBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    // No steer message yet — the note comes from the input after /steer is
+    // inserted (visible feedback that the click fired).
+    expect(sent.some((m) => m.type === 'steer')).toBe(false);
+    expect(input.value).toBe('/steer ');
+  });
+
+  it('Enter on "/steer <note>" posts steer with the args instead of sending text', () => {
+    const { dom, sent, input } = bootWebview();
+    input.value = '/steer focus on the failing test';
+    keydown(dom.window, 'Enter');
+    expect(sent.some((m) => m.type === 'steer' && m.note === 'focus on the failing test')).toBe(true);
+    expect(sent.some((m) => m.type === 'send')).toBe(false);
+    expect(input.value).toBe('');
+  });
+
+  it('blocks a typed /steer as TUI-only when the host catalog demotes it', () => {
+    const { dom, sent, post, input } = bootWebview();
+    const gated = [
+      { name: 'steer', summary: 'x', kind: 'unsupported' as const },
+      { name: 'new', summary: 'y', kind: 'action' as const, handler: 'new-session' as const },
+    ];
+    post({
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      syncReport: null,
+      sessionId: 's1',
+      model: 'm1',
+      sessions: [],
+      slashCommands: gated,
+      steerAvailable: false,
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    } as unknown as HostMsg);
+    input.value = '/steer hi';
+    keydown(dom.window, 'Enter');
+    expect(sent.some((m) => m.type === 'send')).toBe(false);
+    expect(sent.some((m) => m.type === 'steer')).toBe(false);
+    // The TUI-only block note is rendered in the transcript.
+    expect(dom.window.document.getElementById('messages')!.textContent).toContain('TUI');
+  });
+
+  it('renders an accepted steer as a persistent "✎ steer:" row', () => {
+    const { dom, post } = bootWebview();
+    post({
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      syncReport: null,
+      sessionId: 's1',
+      model: 'm1',
+      sessions: [],
+      slashCommands: [],
+      steerAvailable: true,
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    } as unknown as HostMsg);
+    post({ type: 'steerResult', note: 'focus on the failing test', runId: 'run_1' } as unknown as HostMsg);
+    const text = dom.window.document.getElementById('messages')!.textContent;
+    expect(text).toContain('✎ steer');
+    expect(text).toContain('focus on the failing test — accepted');
+  });
+
+  it('flips steer records to delivered when the run completes', () => {
+    const { dom, post } = bootWebview();
+    post({
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      syncReport: null,
+      sessionId: 's1',
+      model: 'm1',
+      sessions: [],
+      slashCommands: [],
+      steerAvailable: true,
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    } as unknown as HostMsg);
+    post({ type: 'steerResult', note: 'say hello too', runId: 'run_1' } as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'run.started', run_id: 'run_1' } } as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'done', run_id: 'run_1' } } as unknown as HostMsg);
+    const text = dom.window.document.getElementById('messages')!.textContent;
+    expect(text).toContain('say hello too — delivered');
+    expect(text).not.toContain('— accepted');
+  });
+
+  it('keeps steer records across the post-run transcript rebuild', () => {
+    // The host re-posts the full transcript after every run and the webview
+    // rebuilds the DOM — the steer record must survive that rebuild (this
+    // is the "the messages disappeared" regression).
+    const { dom, post } = bootWebview();
+    post({
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      syncReport: null,
+      sessionId: 's1',
+      model: 'm1',
+      sessions: [],
+      slashCommands: [],
+      steerAvailable: true,
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    } as unknown as HostMsg);
+    post({ type: 'steerResult', note: 'focus on the failing test', runId: 'run_1' } as unknown as HostMsg);
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [{ role: 'user', content: 'hello' }],
+    } as unknown as HostMsg);
+    const text = dom.window.document.getElementById('messages')!.textContent;
+    expect(text).toContain('hello');
+    expect(text).toContain('focus on the failing test — accepted');
+  });
+
+  it('anchors the steer row before the response it preceded, after rebuild', () => {
+    // The timeline claim: the steer happened BEFORE the run's response.
+    // After the post-run transcript rebuild the row must sit above the
+    // response message, not below it. Anchoring is by assistant-message
+    // SEQUENCE: the stream's message ids (msg_*) differ from the stored
+    // transcript ids (numeric) — verified live — so ids must never be used.
+    const { dom, post } = bootWebview();
+    post({
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      syncReport: null,
+      sessionId: 's1',
+      model: 'm1',
+      sessions: [],
+      slashCommands: [],
+      steerAvailable: true,
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    } as unknown as HostMsg);
+    // run streamed: message (seq 1) belongs to run_1; two steers accepted.
+    post({
+      type: 'stream',
+      event: { type: 'run.started', session_id: 's1', run_id: 'run_1' },
+    } as unknown as HostMsg);
+    post({
+      type: 'stream',
+      event: { type: 'message.started', session_id: 's1', run_id: 'run_1', message: { id: 'msg_live_1', role: 'assistant' } },
+    } as unknown as HostMsg);
+    post({ type: 'steerResult', note: 'first note', runId: 'run_1' } as unknown as HostMsg);
+    post({ type: 'steerResult', note: 'second note', runId: 'run_1' } as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'done', run_id: 'run_1' } } as unknown as HostMsg);
+    // Transcript rebuild — the stored response has a DIFFERENT id (numeric
+    // in the real server) but the same ordinal (first assistant message).
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [{ id: 31790, role: 'assistant', content: 'the response' }],
+    } as unknown as HostMsg);
+    const messages = dom.window.document.getElementById('messages')!;
+    const steerRows = Array.from(messages.querySelectorAll('.steer-note')) as HTMLElement[];
+    const response = messages.querySelector('[data-msg-seq="1"]') as HTMLElement;
+    expect(steerRows.length).toBe(2);
+    expect(response).not.toBeNull();
+    const respIdx = Array.from(messages.children).indexOf(response);
+    // Both rows above the response, in accept order.
+    expect(Array.from(messages.children).indexOf(steerRows[0])).toBeLessThan(respIdx);
+    expect(Array.from(messages.children).indexOf(steerRows[1])).toBeLessThan(respIdx);
+    expect(Array.from(messages.children).indexOf(steerRows[0])).toBeLessThan(
+      Array.from(messages.children).indexOf(steerRows[1]),
+    );
+    expect(steerRows[0].textContent).toContain('first note — delivered');
+    expect(steerRows[1].textContent).toContain('second note — delivered');
   });
 
   it('adds hover copy buttons to user and assistant message bubbles', () => {
