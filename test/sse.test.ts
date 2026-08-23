@@ -87,4 +87,24 @@ describe('parseSse', () => {
     await parseSse(toStream('event: message\ndata: [DONE]\n\n'), (f) => frames.push(f));
     expect(frames).toEqual([]);
   });
+
+  it('reports comment-only keepalive frames via onKeepalive without emitting frames', async () => {
+    const frames: Array<{ event: string }> = [];
+    const keepalives: string[] = [];
+    const body =
+      ': keepalive\n\n' +
+      'event: run.started\ndata: {}\n\n' +
+      ': keepalive\n\n' +
+      'event: done\ndata: {}\n\n';
+    await parseSse(
+      toStream(body),
+      (f) => frames.push({ event: f.event }),
+      undefined,
+      () => keepalives.push('ping'),
+    );
+    // Only the two real events are frames; both keepalive comments fired
+    // the liveness callback and never leaked into the frame stream.
+    expect(frames.map((f) => f.event)).toEqual(['run.started', 'done']);
+    expect(keepalives).toHaveLength(2);
+  });
 });

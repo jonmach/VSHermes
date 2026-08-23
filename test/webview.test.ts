@@ -1254,6 +1254,43 @@ describe('webview bundle (dist/media/chat.js)', () => {
     expect(note!.textContent).toContain('invalid model');
   });
 
+  it('anchors the failure note directly under the user message that failed', () => {
+    const { dom, post } = bootWebview();
+    post({ type: 'state', sessionId: 's1', connected: true, baseUrl: 'http://127.0.0.1:8642', slashCommands: [] } as unknown as HostMsg);
+    // Send a message, then a second one — the failure must attach to the
+    // message that caused it, not the transcript bottom.
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [
+        { id: '1', role: 'user', content: 'first message' },
+        { id: '2', role: 'user', content: 'second message' },
+      ],
+    } as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
+    post({ type: 'stream', event: { type: 'message.started', message_id: 'm2' } } as unknown as HostMsg);
+    post({
+      type: 'stream',
+      event: {
+        type: 'assistant.completed',
+        message_id: 'm2',
+        content: 'API call failed after 3 retries: Connection error.',
+        completed: true,
+        partial: false,
+        interrupted: false,
+      },
+    } as unknown as HostMsg);
+    const messages = dom.window.document.getElementById('messages')!;
+    const users = Array.from(messages.querySelectorAll('.msg.user .bubble'));
+    expect(users.map((u) => u.textContent)).toEqual(['first message', 'second message']);
+    // The error note must sit between the second user message and any
+    // later content — i.e. after "second message", not after "first".
+    const second = users[1]!.parentElement!.parentElement!; // .msg.user wrapper
+    const note = second.nextElementSibling;
+    expect(note?.classList.contains('error-note')).toBe(true);
+    expect(note!.textContent).toContain('Connection error');
+  });
+
   it('clears failure notes when switching to a different session', () => {
     const { dom, post } = bootWebview();
     post({ type: 'state', sessionId: 's1', connected: true, baseUrl: 'http://127.0.0.1:8642', slashCommands: [] } as unknown as HostMsg);
@@ -1292,5 +1329,53 @@ describe('webview bundle (dist/media/chat.js)', () => {
     const messages = dom.window.document.getElementById('messages')!;
     expect(messages.querySelector('.error-note')).toBeNull();
     expect(messages.querySelector('.info-note')?.textContent).toContain('cancelled');
+  });
+
+  it('shows a "still working" info note when the gateway grinds (keepalives only)', () => {
+    const { dom, post } = bootWebview();
+    post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
+    post({ type: 'stream:stalled', kind: 'grinding' } as unknown as HostMsg);
+    const messages = dom.window.document.getElementById('messages')!;
+    const note = messages.querySelector('.info-note');
+    expect(note).not.toBeNull();
+    expect(note!.textContent).toContain('Still working');
+    // Not a verdict — no error styling.
+    expect(messages.querySelector('.error-note')).toBeNull();
+  });
+
+  it('shows an error note when the connection goes dead', () => {
+    const { dom, post } = bootWebview();
+    post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
+    post({ type: 'stream:stalled', kind: 'dead' } as unknown as HostMsg);
+    const messages = dom.window.document.getElementById('messages')!;
+    const note = messages.querySelector('.error-note');
+    expect(note).not.toBeNull();
+    expect(note!.textContent).toContain('connection');
+  });
+
+  it('replaces a stall note when the kind escalates and clears it on real progress', () => {
+    const { dom, post } = bootWebview();
+    post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
+    post({ type: 'stream:stalled', kind: 'grinding' } as unknown as HostMsg);
+    const messages = dom.window.document.getElementById('messages')!;
+    expect(messages.querySelectorAll('.info-note')).toHaveLength(1);
+    // Escalation replaces (not stacks) the note.
+    post({ type: 'stream:stalled', kind: 'dead' } as unknown as HostMsg);
+    expect(messages.querySelectorAll('.info-note')).toHaveLength(0);
+    expect(messages.querySelectorAll('.error-note')).toHaveLength(1);
+    // A real delta means progress — the stall note disappears.
+    post({ type: 'stream', event: { type: 'assistant.delta', delta: 'hi' } } as unknown as HostMsg);
+    expect(messages.querySelector('.error-note')).toBeNull();
+    expect(messages.querySelector('.info-note')).toBeNull();
+  });
+
+  it('clears the stall note on stream:ended', () => {
+    const { dom, post } = bootWebview();
+    post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
+    post({ type: 'stream:stalled', kind: 'grinding' } as unknown as HostMsg);
+    const messages = dom.window.document.getElementById('messages')!;
+    expect(messages.querySelector('.info-note')).not.toBeNull();
+    post({ type: 'stream:ended', sessionId: 's1' } as unknown as HostMsg);
+    expect(messages.querySelector('.info-note')).toBeNull();
   });
 });

@@ -56,6 +56,21 @@ export function activate(context: vscode.ExtensionContext): VSHermes {
   return new VSHermes(context);
 }
 
+/**
+ * Stall watchdog thresholds. The gateway sends an SSE keepalive comment
+ * every 30s while a turn is live, so:
+ *  - STALL_GRIND_MS: no EVENTS for this long (but keepalives still
+ *    arriving) → the gateway is grinding through provider retries/fallbacks.
+ *    Surface "still working" so the run doesn't look ignored.
+ *  - STALL_DEAD_MS: no BYTES at all for this long (several missed
+ *    keepalives) → connection dead / gateway hung. Surface an error note.
+ * The watchdog checks every STALL_CHECK_MS and notifies once per episode
+ * (reset when a real event arrives).
+ */
+const STALL_GRIND_MS = 45_000;
+const STALL_DEAD_MS = 120_000;
+const STALL_CHECK_MS = 5_000;
+
 class VSHermes {
   readonly context: vscode.ExtensionContext;
   readonly statusBar: StatusBar;
@@ -67,6 +82,26 @@ class VSHermes {
   private sessionId: string | null = null;
   private activeRunId: string | null = null;
   private stream: StreamHandle | null = null;
+  /**
+   * Stall watchdog state. The gateway streams `: keepalive` comment frames
+   * every 30s while a turn runs, so the plugin can distinguish three states:
+   *   - events flowing → normal streaming
+   *   - keepalives only, no events → gateway is grinding (provider retries /
+   *     fallback chain) but the connection is alive
+   *   - no bytes at all → connection dead / gateway hung
+   * Timestamps are updated by onStreamEvent (events) and the onKeepalive
+   * callback (comment frames); a periodic check posts stream:stalled once
+   * per episode so the webview can surface "still working" instead of
+   * looking like the query was ignored.
+   */
+  private stallTimer: ReturnType<typeof setInterval> | null = null;
+  private lastEventAt = 0;
+  private lastKeepaliveAt = 0;
+  private stallNotified: 'grinding' | 'dead' | null = null;
+  /** True when the server's terminal `done` event was seen. Clean EOF
+   *  without it means the stream dropped mid-run (gateway restart, network
+   *  cut) — the run status is then polled to reconcile what happened. */
+  private sawStreamDone = false;
   private syncReport: SyncReport | null = null;
   private health: HealthStatus | null = null;
   private caps: Capabilities | null = null;
@@ -1139,10 +1174,26 @@ class VSHermes {
         void this.listSessions();
       }
       this.abortStream();
-      this.stream = c.sessionChatStream(sid, parts, (event) => this.onStreamEvent(event));
+      // Reset stall-watchdog state for the new turn.
+      this.lastEventAt = Date.now();
+      this.lastKeepaliveAt = Date.now();
+      this.stallNotified = null;
+      this.sawStreamDone = false;
+      this.stream = c.sessionChatStream(
+        sid,
+        parts,
+        (event) => this.onStreamEvent(event),
+        undefined,
+        () => {
+          // Keepalive comment frame — connection alive, gateway grinding.
+          this.lastKeepaliveAt = Date.now();
+        },
+      );
+      this.startStallWatchdog();
       try {
         await this.stream.done;
       } catch (err) {
+        this.stopStallWatchdog();
         if ((err as Error).name === 'AbortError') {
           // Intentional stop (/stop, /new, session switch) — clean end, not an error.
           this.view.post({ type: 'stream:ended', sessionId: sid });
@@ -1150,6 +1201,26 @@ class VSHermes {
         }
         this.view.post({ type: 'stream:ended', sessionId: sid, error: (err as Error).message });
         this.reportError(err);
+        return;
+      }
+      this.stopStallWatchdog();
+      // Clean EOF. A healthy stream always ends with the server's `done`
+      // event; EOF without it means the stream dropped mid-run (gateway
+      // restart, network cut) — the turn may have failed server-side with
+      // no terminal event delivered. Reconcile against the run status so
+      // the user sees what happened instead of a silent non-response.
+      if (!this.sawStreamDone) {
+        const runId = this.activeRunId;
+        this.view.post({
+          type: 'stream:ended',
+          sessionId: sid,
+          error: runId
+            ? 'The connection to the gateway was lost before the run finished. Check the gateway logs or try again.'
+            : 'The stream ended without a response. Check the gateway logs or try again.',
+        });
+        if (runId) {
+          void this.reconcileRunStatus(runId);
+        }
         return;
       }
       this.view.post({ type: 'stream:ended', sessionId: sid });
@@ -1161,6 +1232,9 @@ class VSHermes {
   }
 
   private onStreamEvent(event: StreamEvent): void {
+    this.lastEventAt = Date.now();
+    // Any real event is progress — a previously shown stall note is stale.
+    this.stallNotified = null;
     if (event.type === 'run.started' && event.run_id) {
       this.activeRunId = event.run_id;
       this.logInfo(`run started: ${event.run_id}`);
@@ -1168,7 +1242,70 @@ class VSHermes {
       // The run is over — a late /steer must not hit a stale id.
       this.activeRunId = null;
     }
+    if (event.type === 'done') {
+      this.sawStreamDone = true;
+    }
     this.view.post({ type: 'stream', event });
+  }
+
+  /**
+   * Start the periodic stall check for the current stream. Posts at most
+   * one `stream:stalled` per episode; a real event resets the episode.
+   */
+  private startStallWatchdog(): void {
+    this.stopStallWatchdog();
+    this.stallTimer = setInterval(() => {
+      const now = Date.now();
+      const idleEvents = now - this.lastEventAt;
+      const idleBytes = now - this.lastKeepaliveAt;
+      if (idleBytes > STALL_DEAD_MS) {
+        if (this.stallNotified !== 'dead') {
+          this.stallNotified = 'dead';
+          this.view.post({ type: 'stream:stalled', kind: 'dead' });
+        }
+      } else if (idleEvents > STALL_GRIND_MS) {
+        if (this.stallNotified !== 'grinding') {
+          this.stallNotified = 'grinding';
+          this.view.post({ type: 'stream:stalled', kind: 'grinding' });
+        }
+      }
+    }, STALL_CHECK_MS);
+  }
+
+  private stopStallWatchdog(): void {
+    if (this.stallTimer !== null) {
+      clearInterval(this.stallTimer);
+      this.stallTimer = null;
+    }
+  }
+
+  /**
+   * Best-effort reconciliation after a stream dropped without the server's
+   * `done` event. The session-chat stream carries a run_id in every event;
+   * the run status endpoint retains terminal status for an hour, so a
+   * failed run's error can still be surfaced even though the stream died.
+   */
+  private async reconcileRunStatus(runId: string): Promise<void> {
+    try {
+      const c = await this.ensureClient();
+      const run = await c.getRun(runId);
+      if (run.status === 'failed') {
+        this.view.post({
+          type: 'error',
+          message: `The run failed on the gateway: ${run.error ?? 'unknown error'}`,
+        });
+      } else if (run.status === 'running') {
+        this.view.post({
+          type: 'info',
+          text: 'The run is still active on the gateway — use Stop to cancel it.',
+        });
+      }
+      // 'completed' / 'cancelled': nothing to add; the transcript refresh
+      // (or the user's own stop) covers it.
+    } catch {
+      // Reconciliation is best-effort — the generic stream:ended note above
+      // already told the user the connection was lost.
+    }
   }
 
   private visionCapsCache: Record<string, unknown> | null | undefined;
@@ -1311,6 +1448,7 @@ class VSHermes {
   }
 
   private abortStream(): void {
+    this.stopStallWatchdog();
     this.stream?.abort();
     this.stream = null;
   }

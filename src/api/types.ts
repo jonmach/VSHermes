@@ -294,6 +294,8 @@ export type ApprovalDecision = 'once' | 'session' | 'always' | 'deny';
 export interface RunInfo {
   run_id: string;
   status: string;
+  /** Set on terminal failure (GET /v1/runs/{id} → status "failed"). */
+  error?: string;
 }
 
 /** POST /api/sessions/{id}/model — verified shape: the lock verdict lives

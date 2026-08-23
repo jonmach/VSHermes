@@ -52,11 +52,17 @@ interface RawSseFrame {
  * Parse an SSE byte stream from a ReadableStream<Uint8Array>.
  * Emits { event, data } frames for each blank-line-delimited block.
  * Handles CRLF, multi-line `data:` continuation, and `data: [DONE]`.
+ *
+ * Comment-only blocks (e.g. the gateway's `: keepalive` lines) carry no
+ * event or data — they are not emitted as frames, but `onKeepalive` (when
+ * provided) fires so the caller can distinguish "connection alive, server
+ * grinding" from "connection dead" (no bytes at all).
  */
 export async function parseSse(
   body: ReadableStream<Uint8Array>,
   onFrame: (frame: RawSseFrame) => void,
   signal?: AbortSignal,
+  onKeepalive?: () => void,
 ): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -72,7 +78,12 @@ export async function parseSse(
         dataLines.push(line.slice(5).trimStart());
       }
     }
-    if (dataLines.length === 0) return;
+    if (dataLines.length === 0) {
+      // Comment-only frame (`: keepalive`) — the connection is alive but
+      // no event arrived. Not a frame; report the liveness signal.
+      if (onKeepalive && block.trim().length > 0) onKeepalive();
+      return;
+    }
     const data = dataLines.join('\n');
     if (data === '[DONE]') return;
     onFrame({ event, data });
@@ -242,6 +253,7 @@ export class HermesClient {
     message: UserMessage,
     onEvent: (event: StreamEvent) => void,
     signal?: AbortSignal,
+    onKeepalive?: () => void,
   ): StreamHandle {
     const controller = new AbortController();
     const onAbort = () => controller.abort();
@@ -281,7 +293,7 @@ export class HermesClient {
         } catch {
           // Non-JSON data frames are ignored.
         }
-      }, controller.signal);
+      }, controller.signal, onKeepalive);
     })();
 
     return {

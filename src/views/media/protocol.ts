@@ -25,6 +25,7 @@ export type HostMessage =
   | { type: 'sync'; report: SyncReport }
   | { type: 'stream'; event: StreamEvent }
   | { type: 'stream:ended'; sessionId: string; error?: string }
+  | { type: 'stream:stalled'; kind: 'grinding' | 'dead' }
   | { type: 'lineage'; text: string }
   | { type: 'info'; text: string }
   | { type: 'error'; message: string }

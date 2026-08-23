@@ -1,5 +1,32 @@
 # Changelog
 
+## 2.0.11 (2026-08-22)
+
+- **Gateway stalls are visible, not silent.** When the gateway cannot reach
+  its model providers, it grinds through retries and the fallback chain
+  while the API connection stays open — previously the webview showed
+  nothing, so a query looked ignored. The extension now watches the SSE
+  stream: keepalives flowing but no events for 45s shows a "Still working —
+  the gateway may be having trouble reaching its model providers" info
+  note; no bytes at all for 120s (connection dead / gateway hung) shows a
+  red connection note. The note clears automatically when real progress
+  resumes or the stream ends.
+- **Dropped streams reconcile against the run status.** A stream that
+  closes without the server's terminal `done` event (gateway restart,
+  network cut mid-grind) now surfaces an explicit "connection lost" note
+  instead of ending silently, and — when a run_id was captured — polls
+  `GET /v1/runs/{id}` to report the run's actual outcome (failed + error,
+  still running, or completed).
+- **Failure notes anchor to the message that failed.** Error notes were
+  appended at the transcript bottom, so two failed queries produced two
+  identical notes with no way to tell which message each belonged to.
+  Notes now render directly under the user message that triggered the
+  failed run, and stay anchored across transcript refreshes.
+- **SSE keepalive detection.** The parser now recognizes the gateway's
+  `: keepalive` comment frames (previously dropped silently), which is
+  what lets the host distinguish "connection alive, gateway grinding" from
+  "connection dead".
+
 ## 2.0.10 (2026-08-21)
 
 - **Run failures are never silent again.** Server-side run failures arrive
