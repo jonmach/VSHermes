@@ -1343,14 +1343,16 @@ describe('webview bundle (dist/media/chat.js)', () => {
     expect(messages.querySelector('.error-note')).toBeNull();
   });
 
-  it('shows an error note when the connection goes dead', () => {
+  it('shows a neutral note when the connection goes dead', () => {
     const { dom, post } = bootWebview();
     post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
     post({ type: 'stream:stalled', kind: 'dead' } as unknown as HostMsg);
     const messages = dom.window.document.getElementById('messages')!;
-    const note = messages.querySelector('.error-note');
+    const note = messages.querySelector('.info-note');
     expect(note).not.toBeNull();
     expect(note!.textContent).toContain('connection');
+    // A stall is a status, not a verdict — no error styling.
+    expect(messages.querySelector('.error-note')).toBeNull();
   });
 
   it('replaces a stall note when the kind escalates and clears it on real progress', () => {
@@ -1359,23 +1361,62 @@ describe('webview bundle (dist/media/chat.js)', () => {
     post({ type: 'stream:stalled', kind: 'grinding' } as unknown as HostMsg);
     const messages = dom.window.document.getElementById('messages')!;
     expect(messages.querySelectorAll('.info-note')).toHaveLength(1);
-    // Escalation replaces (not stacks) the note.
+    // Escalation replaces (not stacks) the note; both kinds are neutral.
     post({ type: 'stream:stalled', kind: 'dead' } as unknown as HostMsg);
-    expect(messages.querySelectorAll('.info-note')).toHaveLength(0);
-    expect(messages.querySelectorAll('.error-note')).toHaveLength(1);
+    expect(messages.querySelectorAll('.info-note')).toHaveLength(1);
+    expect(messages.querySelectorAll('.error-note')).toHaveLength(0);
+    expect(messages.querySelector('.info-note')!.textContent).toContain('connection');
     // A real delta means progress — the stall note disappears.
     post({ type: 'stream', event: { type: 'assistant.delta', delta: 'hi' } } as unknown as HostMsg);
     expect(messages.querySelector('.error-note')).toBeNull();
     expect(messages.querySelector('.info-note')).toBeNull();
   });
 
-  it('clears the stall note on stream:ended', () => {
+  it('persists a stall note still showing at stream end as a neutral, copyable note', () => {
     const { dom, post } = bootWebview();
+    const base = {
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      remote: false,
+      syncReport: null,
+      sessionId: 's1',
+      model: 'm1',
+      sessions: [],
+      slashCommands: [],
+      steerAvailable: false,
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    };
+    post({ ...base, sessionId: 's1' } as unknown as HostMsg);
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [{ role: 'user', content: 'first message' }],
+    } as unknown as HostMsg);
     post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
-    post({ type: 'stream:stalled', kind: 'grinding' } as unknown as HostMsg);
+    post({ type: 'stream:stalled', kind: 'dead' } as unknown as HostMsg);
     const messages = dom.window.document.getElementById('messages')!;
-    expect(messages.querySelector('.info-note')).not.toBeNull();
+    // A terminal event (done) is not progress — the note stays up.
+    post({ type: 'stream', event: { type: 'done' } } as unknown as HostMsg);
+    expect(messages.querySelector('.info-note')?.textContent).toContain('connection');
     post({ type: 'stream:ended', sessionId: 's1' } as unknown as HostMsg);
-    expect(messages.querySelector('.info-note')).toBeNull();
+    const note = messages.querySelector('.info-note');
+    expect(note).not.toBeNull();
+    expect(note!.textContent).toContain('connection');
+    expect(messages.querySelector('.error-note')).toBeNull();
+    // Survives the post-run transcript rebuild (host re-posts messages),
+    // still anchored under the user message that triggered the run.
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [{ role: 'user', content: 'first message' }],
+    } as unknown as HostMsg);
+    const rebuilt = messages.querySelector('.info-note');
+    expect(rebuilt).not.toBeNull();
+    expect(rebuilt!.textContent).toContain('connection');
+    const user = Array.from(messages.querySelectorAll('.msg.user .bubble'))[0];
+    expect(user!.textContent).toBe('first message');
+    expect(rebuilt!.previousElementSibling?.textContent).toContain('first message');
   });
 });

@@ -147,19 +147,20 @@ const state: {
   turnDeltaCount: number;
   /** tool.* events seen in the current turn. */
   turnToolCount: number;
-  /** Red error notes raised from stream failure events, each anchored to
-   * the user message that triggered the failed run (by user-message
-   * ordinal) so the error renders next to the message that caused it —
-   * not stacked at the transcript bottom. Re-appended after every
-   * transcript rebuild: failed turns are NOT persisted server-side, so
-   * without this the rebuild would erase the only visible trace of the
-   * failure. Scoped to the current session. */
-  persistentErrorNotes: Array<{ text: string; userOrdinal: number | null }>;
+  /** Notes that must survive transcript rebuilds, each anchored to the
+   * user message that triggered the run (by user-message ordinal) so the
+   * note renders next to the message that caused it — not stacked at the
+   * transcript bottom. Re-appended after every rebuild: failed turns and
+   * stream-end stall notes are NOT persisted server-side, so without this
+   * the rebuild would erase the only visible trace. `error` picks the red
+   * (verdict) vs neutral (status) style. Scoped to the current session. */
+  persistentNotes: Array<{ text: string; userOrdinal: number | null; error: boolean }>;
   /** Ordinal of the user message that triggered the current run — failure
    * notes anchor to it. Set on run.started; null before any run. */
   activeUserOrdinal: number | null;
   /** The stall note element currently in the transcript (null when none).
-   * Removed when a real event arrives or the stream ends. */
+   * Removed when real progress arrives; persisted as a neutral note if
+   * still showing when the stream ends. */
   stallNote: HTMLElement | null;
   chips: string[];
   approval: unknown | null;
@@ -201,7 +202,7 @@ const state: {
   toolDurations: new Map(),
   turnDeltaCount: 0,
   turnToolCount: 0,
-  persistentErrorNotes: [],
+  persistentNotes: [],
   activeUserOrdinal: null,
   stallNote: null,
   chips: [],
@@ -451,23 +452,29 @@ function addNote(text: string, error = false): void {
 }
 
 /**
- * Red note for a run-level failure, anchored to the user message that
- * triggered the failed run so it renders directly under that message
+ * Note that survives transcript rebuilds, anchored to the user message
+ * that triggered the run so it renders directly under that message
  * instead of at the transcript bottom. The host re-posts the full message
  * list after every run (refreshSessionAfterRun) and renderMessages rebuilds
- * the DOM from it; failed turns are NOT persisted server-side, so a plain
- * addNote() would be wiped a moment after appearing. renderMessages
- * re-appends the notes recorded here after each rebuild, re-anchoring each
- * to its user message by ordinal. Scoped to the current session (cleared
- * on session switch). When no anchor ordinal is known (e.g. failure before
- * message.started), falls back to the transcript bottom.
+ * the DOM from it; failed turns and stream-end stall notes are NOT
+ * persisted server-side, so a plain addNote() would be wiped a moment
+ * after appearing. renderMessages re-appends the notes recorded here after
+ * each rebuild, re-anchoring each to its user message by ordinal. Scoped
+ * to the current session (cleared on session switch). When no anchor
+ * ordinal is known (e.g. failure before message.started), falls back to
+ * the transcript bottom.
  */
-function addPersistentErrorNote(text: string, userOrdinal?: number | null): void {
+function addPersistentNote(text: string, error: boolean, userOrdinal?: number | null): void {
   const trimmed = typeof text === 'string' ? text.trim() : '';
   if (!trimmed) return;
   const ordinal = userOrdinal ?? state.activeUserOrdinal ?? null;
-  state.persistentErrorNotes.push({ text: trimmed, userOrdinal: ordinal });
-  insertNoteElement(trimmed, true, ordinal);
+  state.persistentNotes.push({ text: trimmed, userOrdinal: ordinal, error });
+  insertNoteElement(trimmed, error, ordinal);
+}
+
+/** Red persistent note for a run-level failure. */
+function addPersistentErrorNote(text: string, userOrdinal?: number | null): void {
+  addPersistentNote(text, true, userOrdinal);
 }
 
 /** Create a note element and insert it after the user message with the
@@ -495,15 +502,17 @@ function insertNoteElement(text: string, error: boolean, userOrdinal: number | n
  * Transient stall indicator. The host posts `stream:stalled` when the
  * gateway is grinding (keepalives flowing, no events) or the connection
  * appears dead (no bytes for a while). Replaces any prior stall note and
- * is removed by clearStallNote() when real progress resumes or the stream
- * ends — unlike persistent error notes it must NOT survive a transcript
- * rebuild (the run is still going; the rebuild is a refresh, not a verdict).
+ * is removed by clearStallNote() when real progress resumes. Both kinds
+ * are neutral status notes — a stall is a status, not a verdict. If the
+ * stream ends while a stall note is still showing, stream:ended persists
+ * it as a neutral, copyable note so the text survives the transcript
+ * rebuild instead of vanishing.
  */
 function showStallNote(kind: 'grinding' | 'dead'): void {
   clearStallNote();
   const el = document.createElement('div');
   if (kind === 'dead') {
-    el.className = 'error-note';
+    el.className = 'info-note';
     el.textContent =
       'No data from the gateway for a while — the connection may have dropped. ' +
       'Check that the gateway is still running, or stop and try again.';
@@ -522,6 +531,19 @@ function clearStallNote(): void {
   if (!state.stallNote) return;
   state.stallNote.remove();
   state.stallNote = null;
+}
+
+/** Events that end the run — no further progress will arrive. A stall note
+ * still showing at one of these must stay up so stream:ended can persist
+ * it; only real progress (deltas, tool activity, message starts) clears it. */
+function isTerminalStreamEvent(ev: StreamEvent): boolean {
+  return (
+    ev.type === 'done' ||
+    ev.type === 'run.completed' ||
+    ev.type === 'run.failed' ||
+    ev.type === 'run.cancelled' ||
+    ev.type === 'error'
+  );
 }
 
 /** Last rendered assistant message, or null. */
@@ -737,7 +759,7 @@ function renderMessages(messages: ChatMessage[], sessionId?: string | null): voi
   // session's transcript must not inherit them. Steer records are likewise
   // client-side view state for the current session.
   if (sessionId && sessionId !== state.sessionId) {
-    state.persistentErrorNotes = [];
+    state.persistentNotes = [];
     state.steerRecords = [];
     state.assistantSeq = 0;
     state.runAnchorSeq.clear();
@@ -840,13 +862,13 @@ function renderMessages(messages: ChatMessage[], sessionId?: string | null): voi
       appendUsageLine(msg, usage);
     }
   }
-  // Re-attach failure notes. The server does not persist failed turns, so
-  // the rebuild above would otherwise erase the only trace of a failure
-  // (notes appended live during streaming live inside messagesEl). Re-anchor
-  // each to its user message by ordinal so the error stays under the
-  // message that caused it.
-  for (const note of state.persistentErrorNotes) {
-    insertNoteElement(note.text, true, note.userOrdinal);
+  // Re-attach persistent notes (run failures + stream-end stalls). The
+  // server does not persist these, so the rebuild above would otherwise
+  // erase the only trace (notes appended live during streaming live inside
+  // messagesEl). Re-anchor each to its user message by ordinal so the note
+  // stays under the message that caused it.
+  for (const note of state.persistentNotes) {
+    insertNoteElement(note.text, note.error, note.userOrdinal);
   }
   // Re-attach steer records — the server does not persist steers either.
   renderSteerRecords();
@@ -942,8 +964,9 @@ function renderSyncBanner(report: SyncReport | null): void {
 // ── streaming events ───────────────────────────────────────────────
 
 function onStreamEvent(ev: StreamEvent): void {
-  // Any real event is progress — drop a previously shown stall note.
-  clearStallNote();
+  // Real progress drops a previously shown stall note; terminal events
+  // leave it up so stream:ended can persist it (see showStallNote).
+  if (!isTerminalStreamEvent(ev)) clearStallNote();
   switch (ev.type) {
     case 'run.started':
       state.streaming = true;
@@ -1518,6 +1541,13 @@ function onHostMessage(msg: HostMessage): void {
       break;
     case 'stream:ended':
       state.streaming = false;
+      // A stall note still showing at stream end must not vanish — the
+      // host re-posts the transcript after the run (renderMessages rebuild)
+      // and the transient element would be wiped. Persist it as a neutral,
+      // copyable note anchored to the run's user message.
+      if (state.stallNote) {
+        addPersistentNote(state.stallNote.textContent ?? '', false, state.activeUserOrdinal);
+      }
       clearStallNote();
       updateRunUi();
       if (msg.error) addNote(`Stream ended with an error: ${msg.error}`, true);
