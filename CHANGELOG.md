@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.0.12 (2026-08-23)
+
+- **Model locks carry the provider.** Locking a model from the picker now records
+  the provider alongside it, so the next message in the session actually runs on
+  the provider you picked — previously a lock without a provider could silently
+  fall back to the default and the follow-up chat failed with a provider-mismatch
+  error.
+- **Stall notes survive the stream end.** A "Still working…" or connection note is
+  no longer wiped when the stream finishes — it stays in place as a neutral,
+  copyable row, so the text is still there to read or select.
+- **Neutral stall wording.** The 45-second "Still working" note no longer
+  speculates about the gateway's health — it now reads just "Still working…":
+  a status, not a verdict.
+
 ## 2.0.11 (2026-08-22)
 
 - **Gateway stalls are visible, not silent.** When the gateway cannot reach
