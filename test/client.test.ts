@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HermesApiError, HermesClient } from '../src/api/client';
+import type { StreamEvent } from '../src/api/types';
 import { MockHermesServer } from './mockServer';
 
 let server: MockHermesServer;
@@ -134,6 +135,73 @@ describe('HermesClient (against contract mock)', () => {
     const run = await client.createRun('hermes-agent', 'PONG');
     const res = await client.approveRun(run.run_id, 'once');
     expect(res).toEqual({ ok: true });
+  });
+
+  it('creates a run with model and session_id in the body', async () => {
+    const run = await client.createRun('deepseek-v4-flash', 'PONG', 'api_seed_1');
+    expect(run.run_id).toMatch(/^run_/);
+    expect(server.lastRunBody).toEqual({
+      input: 'PONG',
+      model: 'deepseek-v4-flash',
+      session_id: 'api_seed_1',
+    });
+    // No session_id when omitted (fresh-session path).
+    await client.createRun(undefined, 'PONG');
+    expect(server.lastRunBody).toEqual({ input: 'PONG' });
+    // Parts (the extension's real message shape) get wrapped in a user
+    // message — the runs API 400s on a bare parts array.
+    await client.createRun('deepseek-v4-flash', [{ type: 'text', text: 'hello' }], 'api_seed_1');
+    expect(server.lastRunBody).toEqual({
+      input: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+      model: 'deepseek-v4-flash',
+      session_id: 'api_seed_1',
+    });
+  });
+
+  it('streams a runs-based chat and normalizes events (approval flow)', async () => {
+    const events: StreamEvent[] = [];
+    const handle = client.runChatStream(
+      'api_seed_1',
+      'deepseek-v4-flash',
+      'run rm -rf /tmp/x',
+      (ev) => events.push(ev),
+    );
+    await handle.done;
+    expect(events.map((e) => e.type)).toEqual([
+      'run.started',
+      'message.started',
+      'tool.started',
+      'approval.request',
+      'approval.responded',
+      'tool.completed',
+      'tool.failed',
+      'assistant.delta',
+      'assistant.completed',
+      'run.completed',
+      'done',
+    ]);
+    // The runs POST carried the session + model.
+    expect(server.lastRunBody).toEqual({
+      input: 'run rm -rf /tmp/x',
+      model: 'deepseek-v4-flash',
+      session_id: 'api_seed_1',
+    });
+    // Normalized payloads: tool.started carries tool_name, approval.request
+    // passes the server's command/choices through, run.completed carries usage.
+    const toolStarted = events.find((e) => e.type === 'tool.started') as { tool_name: string };
+    expect(toolStarted.tool_name).toBe('terminal');
+    const approval = events.find((e) => e.type === 'approval.request') as {
+      command?: string;
+      choices?: string[];
+      request_id?: string;
+    };
+    expect(approval.command).toBe('rm -rf /tmp/x');
+    expect(approval.choices).toEqual(['once', 'session', 'always', 'deny']);
+    expect(approval.request_id).toBe('req_1');
+    const completed = events.find((e) => e.type === 'run.completed') as { usage?: { total_tokens: number } };
+    expect(completed.usage?.total_tokens).toBe(12);
+    const assistant = events.find((e) => e.type === 'assistant.completed') as { content: string };
+    expect(assistant.content).toContain('BLOCKED');
   });
 
   it('throws a friendly connection error when unreachable', async () => {

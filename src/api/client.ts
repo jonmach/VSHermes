@@ -10,10 +10,12 @@ import type {
   ChatMessage,
   HealthDetailed,
   HealthStatus,
+  MessagePart,
   MessagesResponse,
   ModelLockResponse,
   ModelOptionsResponse,
   RunInfo,
+  RuntimeInfo,
   SessionChatRequest,
   SessionChatResponse,
   SessionListResponse,
@@ -304,11 +306,194 @@ export class HermesClient {
 
   // ── runs ─────────────────────────────────────────────────────────
 
-  createRun(model: string, input: string): Promise<RunInfo> {
+  createRun(model: string | undefined, input: UserMessage, sessionId?: string): Promise<RunInfo> {
+    // The runs API needs the model explicitly (it does NOT fall back to the
+    // session's locked model) and persists the turn into `session_id`'s
+    // transcript — both verified live against 0.20.5. `input` accepts a
+    // plain string OR an OpenAI-style message array whose last item carries
+    // `content` — VSHermes parts are content blocks, so wrap them in a user
+    // message (a bare parts array 400s with "No user message found in input").
+    const body: Record<string, unknown> = {};
+    body.input =
+      typeof input === 'string'
+        ? input
+        : [{ role: 'user', content: input as MessagePart[] }];
+    if (model) body.model = model;
+    if (sessionId) body.session_id = sessionId;
     return this.request<RunInfo>('/v1/runs', {
       method: 'POST',
-      body: JSON.stringify({ model, input }),
+      body: JSON.stringify(body),
     });
+  }
+
+  /**
+   * Runs-based streaming chat — the approval-capable surface on stock Hermes.
+   *
+   * POST /v1/runs (input + model + session_id) → run_id, then GET
+   * /v1/runs/{run_id}/events (SSE). Unlike the session-chat stream, the runs
+   * stream embeds the event type INSIDE each JSON frame ({"event":
+   * "message.delta", ...}) — there is no `event:` SSE line — and ends after
+   * `run.completed` with NO `done` frame (verified live 0.20.5). Events are
+   * normalized to the same StreamEvent vocabulary the webview already
+   * consumes, including a synthesized run.started / message.started /
+   * assistant.completed / done.
+   */
+  runChatStream(
+    sessionId: string,
+    model: string | undefined,
+    message: UserMessage,
+    onEvent: (event: StreamEvent) => void,
+    signal?: AbortSignal,
+    onKeepalive?: () => void,
+  ): StreamHandle {
+    const controller = new AbortController();
+    const onAbort = () => controller.abort();
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    const done = (async () => {
+      let run: RunInfo;
+      try {
+        run = await this.createRun(model, message, sessionId);
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return;
+        throw err;
+      }
+      const runId = run.run_id;
+      const messageId = `msg_${runId.replace(/^run_/, '')}`;
+      const base = { run_id: runId, session_id: sessionId };
+      const synth = (type: string, extra: Record<string, unknown> = {}): StreamEvent =>
+        ({ ...base, ...extra, type } as StreamEvent);
+
+      // The POST response IS the start signal — the runs stream has no
+      // run.started and no message.started.
+      onEvent(synth('run.started', {
+        user_message: { role: 'user', content: message },
+        runtime: { provider: '', model: '', route_source: '' },
+      }));
+      onEvent(synth('message.started', { message: { id: messageId, role: 'assistant' } }));
+
+      let res: Response;
+      try {
+        res = await fetch(`${this.baseUrl}/v1/runs/${encodeURIComponent(runId)}/events`, {
+          method: 'GET',
+          headers: this.headers(),
+          signal: controller.signal,
+        });
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return;
+        throw new HermesApiError(
+          `Cannot reach Hermes at ${this.baseUrl} (${(err as Error).message})`,
+          0,
+          'connection_failed',
+        );
+      }
+      if (!res.ok || !res.body) {
+        const detail = await this.readErrorBody(res);
+        throw new HermesApiError(
+          detail.message || `${res.status} ${res.statusText}`,
+          res.status,
+          detail.code,
+          detail.type,
+        );
+      }
+      await parseSse(res.body, (frame) => {
+        try {
+          const parsed = JSON.parse(frame.data) as { event?: string } & Record<string, unknown>;
+          const type = parsed.event;
+          if (!type) return;
+          switch (type) {
+            case 'message.delta':
+              onEvent(synth('assistant.delta', { message_id: messageId, delta: String(parsed.delta ?? '') }));
+              break;
+            case 'tool.started':
+              onEvent(synth('tool.started', {
+                message_id: messageId,
+                tool_name: String(parsed.tool ?? ''),
+                preview: (parsed.preview as string | null) ?? null,
+                args: null,
+              }));
+              break;
+            case 'tool.completed':
+              onEvent(synth('tool.completed', {
+                message_id: messageId,
+                tool_name: String(parsed.tool ?? ''),
+                preview: null,
+                args: null,
+              }));
+              // The runs stream flags failures on tool.completed itself
+              // (error: true) — the webview needs tool.failed to flip the card.
+              if (parsed.error) {
+                onEvent(synth('tool.failed', {
+                  message_id: messageId,
+                  tool_name: String(parsed.tool ?? ''),
+                  preview: null,
+                  args: null,
+                }));
+              }
+              break;
+            case 'reasoning.available':
+              onEvent(synth('tool.progress', {
+                message_id: messageId,
+                tool_name: '_thinking',
+                delta: String(parsed.text ?? ''),
+              }));
+              break;
+            case 'approval.request':
+              onEvent(synth('approval.request', {
+                command: parsed.command,
+                preview: parsed.preview,
+                pattern_key: parsed.pattern_key,
+                pattern_keys: parsed.pattern_keys,
+                description: parsed.description,
+                allow_permanent: parsed.allow_permanent,
+                allow_session: parsed.allow_session,
+                request_id: parsed.request_id,
+                choices: parsed.choices,
+              }));
+              break;
+            case 'approval.responded':
+              onEvent(synth('approval.responded', { choice: parsed.choice, resolved: parsed.resolved }));
+              break;
+            case 'run.completed':
+              onEvent(synth('assistant.completed', {
+                message_id: messageId,
+                content: String(parsed.output ?? ''),
+                completed: true,
+                partial: false,
+                interrupted: false,
+                runtime: ((parsed.usage as { runtime?: RuntimeInfo } | undefined)?.runtime ?? {}) as RuntimeInfo,
+              }));
+              onEvent(synth('run.completed', {
+                message_id: messageId,
+                completed: true,
+                messages: [],
+                usage: parsed.usage,
+              }));
+              onEvent(synth('done'));
+              break;
+            case 'run.failed':
+              onEvent(synth('run.failed', { error: String(parsed.error ?? 'unknown error') }));
+              break;
+            case 'run.cancelled':
+              onEvent(synth('run.cancelled'));
+              break;
+            case 'error':
+              onEvent(synth('error', { message: String(parsed.message ?? 'unknown error') }));
+              break;
+            default:
+              // Unknown frames are ignored — forward compatibility.
+              break;
+          }
+        } catch {
+          // Non-JSON data frames are ignored.
+        }
+      }, controller.signal, onKeepalive);
+    })();
+
+    return {
+      abort: () => controller.abort(),
+      done,
+    };
   }
 
   getRun(runId: string): Promise<RunInfo> {

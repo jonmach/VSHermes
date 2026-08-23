@@ -13,7 +13,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { HermesApiError, HermesClient } from '../src/api/client';
-import type { StreamEvent } from '../src/api/types';
+import type { MessagePart, StreamEvent } from '../src/api/types';
 
 function loadKeyFromEnvFile(): string | undefined {
   const candidates = [
@@ -75,6 +75,45 @@ describe.skipIf(!live)('live Hermes API Server', () => {
     const fork = await client.forkSession(created.session.id);
     createdIds.push(fork.session.id);
     expect(fork.session.message_count).toBeGreaterThanOrEqual(2);
+  }, 180_000);
+
+  it('runs-based chat surfaces approval.request and resolves via approveRun', async () => {
+    const created = await client.createSession();
+    createdIds.push(created.session.id);
+    const events: StreamEvent[] = [];
+    // Send as parts — the extension's real message shape (a bare parts
+    // array 400s on the runs API; it must be wrapped in a user message).
+    const parts: MessagePart[] = [
+      { type: 'text', text: 'Use the terminal tool to run exactly this command and report its output: rm -rf /tmp/hermes-live-runs-test. Do not skip it.' },
+    ];
+    const handle = client.runChatStream(
+      created.session.id,
+      undefined,
+      parts,
+      (ev) => events.push(ev),
+    );
+    // The agent attempts the command → the gate blocks → approval.request.
+    const deadline = Date.now() + 120_000;
+    while (!events.some((e) => e.type === 'approval.request') && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    const approval = events.find((e) => e.type === 'approval.request') as
+      | ({ run_id?: string; choices?: string[]; command?: string } & StreamEvent)
+      | undefined;
+    expect(approval).toBeDefined();
+    expect(approval?.choices).toEqual(['once', 'session', 'always', 'deny']);
+    expect(approval?.run_id).toBeTruthy();
+    // Resolve with deny — the run must then complete normally.
+    const res = await client.approveRun(approval!.run_id!, 'deny');
+    expect((res as { resolved?: number }).resolved).toBe(1);
+    await handle.done;
+    const types = events.map((e) => e.type);
+    expect(types).toContain('approval.responded');
+    expect(types).toContain('run.completed');
+    expect(types[types.length - 1]).toBe('done');
+    // The denied turn persisted into the session transcript.
+    const sess = await client.getSession(created.session.id);
+    expect(sess.session.message_count).toBeGreaterThanOrEqual(2);
   }, 180_000);
 
   it('multimodal image parts are accepted and routed', async () => {

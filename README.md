@@ -162,6 +162,30 @@ chat title-bar icon / "VSHermes: Endpoints…" — both reveal the tab)
 
 ## Architecture & design decisions
 
+### HARD RULE — NO SERVER-SIDE CHANGES, EVER
+
+**VSHermes is a client-only extension. It must work against a stock,
+unmodified Hermes server that the user runs themselves.** The user has
+stated this repeatedly; it is not negotiable and must not require
+repeating.
+
+- **NEVER** modify, patch, fork, or fix hermes-agent server code
+  (gateway, api_server.py, run.py, tools/, agent/, or anything server-side)
+  as part of VSHermes work.
+- **NEVER** fix a server bug by requiring plugin users to change their
+  server (config, code, environment, or otherwise). Forcing users to modify
+  their Hermes server to use the plugin is not appropriate — full stop.
+- **NEVER** offer or draft a "server-side patch" as an option — not even as
+  an alternative. The answer to a server gap is: (1) make the plugin behave
+  honestly in the gap (visible errors, stall notes, capability checks,
+  graceful degradation — never pretend a feature works), and (2) if a real
+  server capability is missing, report it upstream (NousResearch/hermes-agent)
+  as the deliverable. Server-side needs go upstream FIRST; the plugin can
+  only build on a capability after the upstream change exists.
+- Plugin users must be able to install VSHermes and use it against a stock
+  Hermes gateway with zero server configuration beyond what Hermes itself
+  ships.
+
 ```
 ┌─────────────────────────── VS Code ───────────────────────────┐
 │  Webview (chat panel)            Tree view (history)          │

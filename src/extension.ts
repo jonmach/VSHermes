@@ -1179,8 +1179,22 @@ class VSHermes {
       this.lastKeepaliveAt = Date.now();
       this.stallNotified = null;
       this.sawStreamDone = false;
-      this.stream = c.sessionChatStream(
+      // The runs API needs the model explicitly (it does NOT fall back to the
+      // session's locked model) — resolve it from the session like the
+      // reconnect path does, so per-session model selection keeps working.
+      let runModel: string | undefined;
+      try {
+        const s = await c.getSession(sid).catch(() => null);
+        runModel = s?.session.model ?? undefined;
+      } catch {
+        runModel = undefined; // server default
+      }
+      // Runs-based transport: the approval-capable surface on stock Hermes.
+      // The adapter normalizes the runs SSE stream to the same events the
+      // webview already consumes (incl. a synthesized `done`).
+      this.stream = c.runChatStream(
         sid,
+        runModel,
         parts,
         (event) => this.onStreamEvent(event),
         undefined,

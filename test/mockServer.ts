@@ -93,9 +93,24 @@ export const CAPTURED_STREAM = [
   ['done', { session_id: 'api_test_1', run_id: 'run_test_1', seq: 8 }],
 ] as const;
 
+/** Runs-events stream shapes captured live from the 0.20.5 gateway
+ * (POST /v1/runs → GET /v1/runs/{id}/events). The event type rides INSIDE
+ * the JSON — there is no `event:` SSE line — and the stream ends after
+ * run.completed with no `done` frame. */
+export const RUNS_STREAM = [
+  { event: 'tool.started', run_id: 'run_test_runs1', timestamp: 1, tool: 'terminal', preview: 'rm -rf /tmp/x' },
+  { event: 'approval.request', run_id: 'run_test_runs1', timestamp: 2, command: 'rm -rf /tmp/x', pattern_key: 'delete in root path', pattern_keys: ['delete in root path'], description: 'delete in root path', allow_permanent: true, allow_session: true, request_id: 'req_1', choices: ['once', 'session', 'always', 'deny'] },
+  { event: 'approval.responded', run_id: 'run_test_runs1', timestamp: 3, choice: 'deny', resolved: 1 },
+  { event: 'tool.completed', run_id: 'run_test_runs1', timestamp: 4, tool: 'terminal', duration: 1.0, error: true },
+  { event: 'message.delta', run_id: 'run_test_runs1', timestamp: 5, delta: 'BLOCKED: Command denied by user.' },
+  { event: 'run.completed', run_id: 'run_test_runs1', timestamp: 6, output: 'BLOCKED: Command denied by user.', usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12, runtime: { provider: 'deepseek', model: 'deepseek-v4-flash' } } },
+] as const;
+
 export class MockHermesServer {
   private server: Server;
   private sessions: MockSession[] = [];
+  /** Last POST /v1/runs body — lets tests assert the client's run contract. */
+  lastRunBody: Record<string, unknown> | null = null;
   baseUrl = '';
   readonly apiKey = API_KEY;
 
@@ -289,7 +304,25 @@ export class MockHermesServer {
     }
 
     if (path === '/v1/runs' && method === 'POST') {
-      this.json(res, 202, { run_id: 'run_test_created', status: 'started' });
+      const body = await readBody(req);
+      this.lastRunBody = body;
+      this.json(res, 202, { run_id: 'run_test_runs1', status: 'started' });
+      return;
+    }
+    const runEventsM = path.match(/^\/v1\/runs\/([^/]+)\/events$/);
+    if (runEventsM && method === 'GET') {
+      // Real runs-stream shape: `data:` frames WITHOUT an `event:` SSE line
+      // (the type rides inside the JSON), ending with `: stream closed`.
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      });
+      for (const frame of RUNS_STREAM) {
+        res.write(`data: ${JSON.stringify(frame)}\n\n`);
+      }
+      res.write(': stream closed\n\n');
+      res.end();
       return;
     }
     const runM = path.match(/^\/v1\/runs\/([^/]+)\/(stop|approval|steer)$/);
