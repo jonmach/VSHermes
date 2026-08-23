@@ -1522,7 +1522,7 @@ class VSHermes {
         await this.newSession();
         if (!this.sessionId) return;
       }
-      await c.lockModel(this.sessionId, model);
+      await c.lockModel(this.sessionId, model, provider.provider.slug);
       this.view.post({ type: 'model', model });
       this.view.postInfo(`Model locked to ${model} for this session.`);
     } catch (err) {
@@ -1572,7 +1572,7 @@ class VSHermes {
         if (this.sessionId) {
           try {
             const c = await this.ensureClient();
-            await c.lockModel(this.sessionId, msg.model);
+            await c.lockModel(this.sessionId, msg.model, msg.provider);
             this.view.post({ type: 'model', model: msg.model });
           } catch (err) {
             this.reportError(err);

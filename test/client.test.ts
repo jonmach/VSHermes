@@ -82,6 +82,13 @@ describe('HermesClient (against contract mock)', () => {
     expect(res.runtime.model_lock).toBe('accepted');
   });
 
+  it('locks a model with a provider (picker path sends the slug)', async () => {
+    const created = await client.createSession();
+    const res = await client.lockModel(created.session.id, 'qwen3.6-27b-mtp', 'lmstudio');
+    expect(res.runtime.model_lock).toBe('accepted');
+    expect(res.runtime.provider).toBe('lmstudio');
+  });
+
   it('sends a non-streaming chat', async () => {
     const created = await client.createSession();
     const res = await client.sessionChat(created.session.id, 'Reply with exactly: PONG');

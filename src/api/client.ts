@@ -229,10 +229,12 @@ export class HermesClient {
     });
   }
 
-  lockModel(sessionId: string, model: string): Promise<ModelLockResponse> {
+  lockModel(sessionId: string, model: string, provider?: string): Promise<ModelLockResponse> {
+    const body: Record<string, string> = { model };
+    if (provider) body.provider = provider;
     return this.request<ModelLockResponse>(
       `/api/sessions/${encodeURIComponent(sessionId)}/model`,
-      { method: 'POST', body: JSON.stringify({ model }) },
+      { method: 'POST', body: JSON.stringify(body) },
     );
   }
 

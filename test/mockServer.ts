@@ -291,7 +291,7 @@ export class MockHermesServer {
       }
       if (rest === '/model' && method === 'POST') {
         const body = await readBody(req);
-        this.json(res, 200, { object: 'hermes.session.model_lock', session_id: sid, runtime: { provider: '', model: body.model, route_source: 'raw_request', requested: { provider: '', model: body.model }, model_lock: 'accepted' } });
+        this.json(res, 200, { object: 'hermes.session.model_lock', session_id: sid, runtime: { provider: body.provider ?? '', model: body.model, route_source: 'raw_request', requested: { provider: body.provider ?? '', model: body.model }, model_lock: 'accepted' } });
         return;
       }
       if (rest === '/fork' && method === 'POST') {

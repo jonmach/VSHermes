@@ -55,7 +55,7 @@ export type WebviewMessage =
   | { type: 'stop' }
   | { type: 'steer'; note: string }
   | { type: 'approve'; decision: ApprovalDecision }
-  | { type: 'setModel'; model: string }
+  | { type: 'setModel'; model: string; provider?: string }
   | { type: 'chooseModel' }
   | { type: 'skills' }
   | { type: 'setApiKey' }
