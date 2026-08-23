@@ -26,6 +26,19 @@
   `: keepalive` comment frames (previously dropped silently), which is
   what lets the host distinguish "connection alive, gateway grinding" from
   "connection dead".
+- **Run steering — `/steer` is real.** `/steer <note>` injects guidance
+  into the running agent via `POST /v1/runs/{id}/steer` (Hermes 0.20.4+),
+  and a ✎ Steer button appears beside Send while a run is streaming.
+  Accepted steers are recorded in the chat as persistent
+  "✎ steer: <note> — accepted" rows that flip to "delivered" when the run
+  completes. On older servers `/steer` degrades to a blocked, TUI-only
+  notice — it is never sent as text.
+- **Chat runs on the runs API.** Messages now start via `POST /v1/runs`
+  and stream from `GET /v1/runs/{id}/events` — the same approval-capable
+  surface the TUI uses. Tool approvals arrive as dialogs with once /
+  this session / always / deny choices, resolved through the API, and an
+  approval that already timed out or was resolved (409) is explained
+  instead of leaving you waiting on nothing.
 
 ## 2.0.10 (2026-08-21)
 
