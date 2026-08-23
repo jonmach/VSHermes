@@ -518,9 +518,7 @@ function showStallNote(kind: 'grinding' | 'dead'): void {
       'Check that the gateway is still running, or stop and try again.';
   } else {
     el.className = 'info-note';
-    el.textContent =
-      'Still working — the gateway may be having trouble reaching its model providers. ' +
-      'This can take a while.';
+    el.textContent = 'Still working…';
   }
   messagesEl.appendChild(el);
   state.stallNote = el;

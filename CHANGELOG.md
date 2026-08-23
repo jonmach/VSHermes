@@ -6,10 +6,9 @@
   its model providers, it grinds through retries and the fallback chain
   while the API connection stays open — previously the webview showed
   nothing, so a query looked ignored. The extension now watches the SSE
-  stream: keepalives flowing but no events for 45s shows a "Still working —
-  the gateway may be having trouble reaching its model providers" info
-  note; no bytes at all for 120s (connection dead / gateway hung) shows a
-  red connection note. The note clears automatically when real progress
+  stream: keepalives flowing but no events for 45s shows a "Still working…"
+  info note; no bytes at all for 120s (connection dead / gateway hung)
+  shows a red connection note. The note clears automatically when real progress
   resumes or the stream ends.
 - **Dropped streams reconcile against the run status.** A stream that
   closes without the server's terminal `done` event (gateway restart,
