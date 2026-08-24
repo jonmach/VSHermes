@@ -26,6 +26,7 @@ import {
   getActiveEndpoint,
   getBaseUrl,
   getCheckSyncOnStartup,
+  getContextLength,
   getEndpointApiKey,
   getKeyForEndpoint,
   getEndpoints,
@@ -79,6 +80,16 @@ class VSHermes {
 
   private client: HermesClient | null = null;
   private sessionId: string | null = null;
+  /** Server-reported model for the current session (GET /api/sessions/{id}
+   *  → session.model). Authoritative for display: survives plugin reloads
+   *  and locks made by other clients (TUI). The API does NOT serialize the
+   *  provider, so provider stays client-cache-only. */
+  private sessionModel: string | null = null;
+  /** Configured default selection from /api/model/options (picker
+   *  "current"). Used for the no-session / un-locked badge — the
+   *  /v1/capabilities model is a virtual alias ("hermes-agent"), not the
+   *  model a run would actually use. */
+  private defaultSelection: { model: string | null; provider: string | null } | null = null;
   private activeRunId: string | null = null;
   private stream: StreamHandle | null = null;
   /**
@@ -107,10 +118,13 @@ class VSHermes {
    *  the polling loop only re-posts when the session's messages changed. */
   private lastTranscriptSig: {
     sessionId: string;
-    count: number;
     lastId: string | null;
     lastTs: number | null;
   } | null = null;
+  /** Dedupe key for the history-trim notice — one note per (session,
+   *  budget, trimmed-count) so a long local-model session doesn't spam the
+   *  transcript with an identical note on every send. */
+  private lastTrimNoteKey: string | null = null;
   private readonly log = vscode.window.createOutputChannel('VSHermes');
 
   /** Observable test surface — exposed via extension.exports. */
@@ -232,7 +246,7 @@ class VSHermes {
       this.health = await c.health();
       this.caps = await c.capabilities();
       const lock = this.sessionLockFor(this.sessionId ?? '');
-      this.statusBar.connected(this.pluginVersion, this.health.version, lock?.model ?? this.caps.model, getBaseUrl());
+      this.statusBar.connected(this.pluginVersion, this.health.version, lock?.model ?? this.caps.model, getBaseUrl(), lock?.provider ?? null);
       this.logInfo(`connected to Hermes ${this.health.version} at ${getBaseUrl()}`);
       // The webview flipped to "offline" the moment a switch started
       // (client was nulled); a successful connect must push connected:true
@@ -272,7 +286,15 @@ class VSHermes {
       remote: isRemoteUrl(getBaseUrl()),
       syncReport: this.syncReport,
       sessionId: this.sessionId,
-      model: this.sessionLockFor(this.sessionId ?? '')?.model ?? this.caps?.model ?? null,
+      model:
+        this.sessionModel ??
+        this.sessionLockFor(this.sessionId ?? '')?.model ??
+        this.defaultSelection?.model ??
+        // /v1/capabilities advertises a virtual alias ("hermes-agent"),
+        // not a real configured model — never display it.
+        (this.caps?.model && this.caps.model !== 'hermes-agent' ? this.caps.model : null) ??
+        null,
+      provider: this.displayProvider(),
       sessions: [],
       slashCommands: this.slashCatalog(), steerAvailable: this.steerAvailable,
       maxImageBytes: getMaxImageBytes(),
@@ -600,7 +622,7 @@ class VSHermes {
         // Gateway came back — refresh capabilities, sync and the UI.
         this.health = h;
         this.caps = await c.capabilities();
-        this.statusBar.connected(this.pluginVersion, h.version, this.sessionLockFor(this.sessionId ?? '')?.model ?? this.caps.model, getBaseUrl());
+        this.statusBar.connected(this.pluginVersion, h.version, this.sessionLockFor(this.sessionId ?? '')?.model ?? this.caps.model, getBaseUrl(), this.sessionLockFor(this.sessionId ?? '')?.provider ?? null);
         await this.runSyncCheck(true);
         void this.listSessions();
         let model: string | null = this.caps.model ?? null;
@@ -608,11 +630,9 @@ class VSHermes {
           const s = await c.getSession(this.sessionId).catch(() => null);
           if (s?.session.model) model = s.session.model;
         }
-        this.view.post({
-          type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport,
-          sessionId: this.sessionId, model, sessions: [], slashCommands: this.slashCatalog(), steerAvailable: this.steerAvailable,
-          maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension(),
-        });
+        // Server truth only — never the virtual "hermes-agent" alias.
+        this.sessionModel = this.sessionId ? (model === 'hermes-agent' ? null : model) : null;
+        this.view.post(this.chatState());
         this.view.postInfo('Reconnected to Hermes.');
         void this.refreshEndpointsPanel();
       } else {
@@ -624,7 +644,7 @@ class VSHermes {
         this.statusBar.offline('gateway unreachable');
         this.view.post({
           type: 'state', connected: false, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport,
-          sessionId: this.sessionId, model: null, sessions: [], slashCommands: this.slashCatalog(), steerAvailable: this.steerAvailable,
+          sessionId: this.sessionId, model: null, provider: null, sessions: [], slashCommands: this.slashCatalog(), steerAvailable: this.steerAvailable,
           maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension(),
         });
         void this.refreshEndpointsPanel();
@@ -648,26 +668,45 @@ class VSHermes {
     if (!this.sessionId || this.stream || !this.isConnected) return;
     try {
       const c = await this.ensureClient();
-      const msgs = await c.sessionMessages(this.sessionId, 500);
-      const last = msgs.data.length > 0 ? msgs.data[msgs.data.length - 1] : null;
+      // Cheap poll: the server's default page (LATEST 500). An explicit
+      // limit would default to the OLDEST page and silently miss the tail
+      // of a >500-message session (verified live 0.20.5).
+      const page = await c.sessionMessages(this.sessionId);
+      const resolved =
+        page.session_id && page.session_id !== this.sessionId ? page.session_id : this.sessionId;
+      const last = page.data.length > 0 ? page.data[page.data.length - 1] : null;
       const sig = {
-        sessionId: this.sessionId,
-        count: msgs.data.length,
+        sessionId: resolved,
         lastId: last?.id != null ? String(last.id) : null,
         lastTs: last?.timestamp ?? null,
       };
       const prev = this.lastTranscriptSig;
-      this.lastTranscriptSig = sig;
+      if (resolved !== this.sessionId) {
+        // Another client (the TUI, a second window) compacted this session
+        // while we watched — adopt the continuation and reload the full
+        // transcript so the client reflects the server's compacted state.
+        this.logInfo(`poll: session ${this.sessionId} compacted — adopting continuation ${resolved}`);
+        await this.adoptCompressionChild(this.sessionId, resolved);
+        const full = await c.fetchAllMessages(resolved);
+        this.postTranscript(resolved, full.data);
+        this.view.post({
+          type: 'sessionNote',
+          text: 'Session compacted by the server — transcript reloaded.',
+        });
+        return;
+      }
       if (
         prev &&
         prev.sessionId === sig.sessionId &&
-        prev.count === sig.count &&
         prev.lastId === sig.lastId &&
         prev.lastTs === sig.lastTs
       ) {
         return; // unchanged — no re-render
       }
-      this.postTranscript(sig.sessionId, msgs.data);
+      // Something changed — re-post the FULL transcript (the page alone
+      // would truncate a >500-message session to its tail).
+      const full = await c.fetchAllMessages(resolved);
+      this.postTranscript(resolved, full.data);
     } catch {
       // Non-fatal — the next tick retries.
     }
@@ -678,7 +717,6 @@ class VSHermes {
     const last = messages.length > 0 ? messages[messages.length - 1] : null;
     this.lastTranscriptSig = {
       sessionId,
-      count: messages.length,
       lastId: last?.id != null ? String(last.id) : null,
       lastTs: last?.timestamp ?? null,
     };
@@ -953,7 +991,7 @@ class VSHermes {
             : `${host} — ${nEp} endpoints missing`;
       this.statusBar.syncWarning(short, r.messages.join(' '));
     } else {
-      this.statusBar.connected(this.pluginVersion, this.health?.version ?? r.hermesVersion, this.caps?.model ?? null, getBaseUrl());
+      this.statusBar.connected(this.pluginVersion, this.health?.version ?? r.hermesVersion, this.caps?.model ?? null, getBaseUrl(), this.sessionLockFor(this.sessionId ?? '')?.provider ?? null);
     }
     this.logInfo(`sync check: ${r.status} — ${r.messages.join(' ')}`);
     this.view.post({ type: 'sync', report: r });
@@ -1031,7 +1069,8 @@ class VSHermes {
       const res = await c.createSession();
       this.sessionId = res.session.id;
       this.activeRunId = null;
-      this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport, sessionId: this.sessionId, model: res.session.model, sessions: [], slashCommands: this.slashCatalog(), steerAvailable: this.steerAvailable, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
+      this.sessionModel = res.session.model ?? null;
+      this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport, sessionId: this.sessionId, model: res.session.model, provider: this.displayProvider(), sessions: [], slashCommands: this.slashCatalog(), steerAvailable: this.steerAvailable, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
       void this.listSessions();
     } catch (err) {
       this.reportError(err);
@@ -1045,12 +1084,22 @@ class VSHermes {
     try {
       const c = await this.ensureClient();
       const [msgs, session] = await Promise.all([
-        c.sessionMessages(id),
+        c.fetchAllMessages(id),
         c.getSession(id).catch(() => null),
       ]);
-      this.postTranscript(id, msgs.data);
+      // The messages endpoint resolves compression chains to their tip: a
+      // stale id (opened from a link, or compacted by the TUI while the
+      // plugin was closed) lands on the continuation, and the transcript
+      // shown is the compacted copy — the server's view.
+      const resolved = msgs.session_id && msgs.session_id !== id ? msgs.session_id : id;
+      if (resolved !== id) {
+        this.logInfo(`opened ${id} — resolved to continuation ${resolved} (compacted)`);
+        await this.adoptCompressionChild(id, resolved);
+      }
+      this.postTranscript(resolved, msgs.data);
       void this.postLineageNotice(session?.session ?? null);
-      this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport, sessionId: id, model: session?.session.model ?? null, sessions: [], slashCommands: this.slashCatalog(), steerAvailable: this.steerAvailable, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
+      this.sessionModel = this.cleanServerModel(session?.session.model);
+      this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport, sessionId: resolved, model: this.sessionModel, provider: this.displayProvider(), sessions: [], slashCommands: this.slashCatalog(), steerAvailable: this.steerAvailable, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
       this.focusChat();
     } catch (err) {
       this.reportError(err);
@@ -1072,7 +1121,8 @@ class VSHermes {
       await this.context.globalState.update(this.lockKey(target), undefined);
       if (this.sessionId === target) {
         this.sessionId = null;
-        this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport, sessionId: null, model: null, sessions: [], slashCommands: this.slashCatalog(), steerAvailable: this.steerAvailable, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
+        this.sessionModel = null;
+        this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport, sessionId: null, model: null, provider: null, sessions: [], slashCommands: this.slashCatalog(), steerAvailable: this.steerAvailable, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
       }
       void this.listSessions();
     } catch (err) {
@@ -1195,6 +1245,19 @@ class VSHermes {
           runModel = undefined; // server default
         }
       }
+      // Client-side context: /v1/runs is stateless by design — the server
+      // loads NO session history (the only history it sees is the body's
+      // conversation_history), so the plugin sends the transcript itself.
+      // A history-build failure must never block the send — fall back to
+      // the old stateless behavior (the turn still runs, just without
+      // cross-turn context).
+      let history: { role: string; content: string }[] | undefined;
+      try {
+        history = await this.buildRunHistory(c, sid);
+      } catch (err) {
+        this.logInfo(`history build failed, sending without context: ${(err as Error).message}`);
+        history = undefined;
+      }
       // Runs-based transport: the approval-capable surface on stock Hermes.
       // The adapter normalizes the runs SSE stream to the same events the
       // webview already consumes (incl. a synthesized `done`).
@@ -1205,6 +1268,8 @@ class VSHermes {
         parts,
         (event) => this.onStreamEvent(event),
         undefined,
+        undefined,
+        history,
       );
       this.startStallWatchdog();
       try {
@@ -1366,15 +1431,105 @@ class VSHermes {
     }
   }
 
+  /** Build the conversation_history payload for /v1/runs: the session's
+   *  full transcript, flattened to the {role, content} shape the runs
+   *  contract accepts (tool_calls / tool_call_id are stripped server-side
+   *  anyway — verified live: tool-role rows load fine and the model gets
+   *  the context). Trimmed to a token budget safely below the server's own
+   *  compaction trigger so the model never silently compacts mid-run; the
+   *  immediately-preceding exchange is always kept. */
+  private async buildRunHistory(
+    c: HermesClient,
+    sid: string,
+  ): Promise<{ role: string; content: string }[]> {
+    const msgs = await c.fetchAllMessages(sid);
+    if (msgs.data.length === 0) return [];
+    const hist: { role: string; content: string }[] = [];
+    for (const m of msgs.data) {
+      if (m.role === 'system') continue; // the server builds its own system prompt
+      let content = m.content ?? '';
+      if (m.role === 'assistant' && !content && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+        const names = m.tool_calls
+          .map((t) =>
+            t && typeof t === 'object' && 'name' in t
+              ? String((t as { name?: unknown }).name ?? '')
+              : '',
+          )
+          .filter(Boolean);
+        content = names.length > 0 ? `[tool calls: ${names.join(', ')}]` : '';
+      }
+      hist.push({ role: m.role, content });
+    }
+    const ctx = getContextLength();
+    // Server compaction trigger: 0.75 × ctx for models < 512K, else 0.5 ×
+    // ctx (raise-only floor; verified in logs). Stay under it with margin,
+    // minus the ~24K system-prompt + new-message + output reserve.
+    const trigger = ctx < 512_000 ? 0.7 * ctx : 0.45 * ctx;
+    const budgetTokens = Math.max(0, Math.floor(trigger) - 24_000);
+    const estimate = (arr: { role: string; content: string }[]): number =>
+      arr.reduce((n, h) => n + h.content.length, 0) / 4; // chars/4 ≈ tokens
+    if (estimate(hist) <= budgetTokens) return hist;
+    // Drop oldest messages until the payload fits; never the last two —
+    // the reply the user is answering must stay in context.
+    let keepFrom = 0;
+    while (keepFrom < hist.length - 2 && estimate(hist.slice(keepFrom)) > budgetTokens) {
+      keepFrom += 1;
+    }
+    const trimmed = hist.slice(keepFrom);
+    const dropped = hist.length - trimmed.length;
+    const key = `${sid}:${budgetTokens}:${dropped}`;
+    if (key !== this.lastTrimNoteKey) {
+      this.lastTrimNoteKey = key;
+      this.view.post({
+        type: 'sessionNote',
+        text: `History trimmed to fit the model window (${Math.round(budgetTokens / 1000)}K token budget) — the oldest ${dropped} message(s) were not sent.`,
+      });
+    }
+    return trimmed;
+  }
+
+  /** Adopt a compression-rotation continuation: the server compacted
+   *  `oldId` and moved the conversation to `newId`. Carry the model lock
+   *  across the boundary (locks are keyed by session id — without this the
+   *  continuation would fall back to the server-default model on the next
+   *  run) and re-post state so the webview tracks the new id. Callers post
+   *  the user-facing notice. */
+  private async adoptCompressionChild(oldId: string, newId: string): Promise<void> {
+    const lock = this.sessionLockFor(oldId);
+    if (lock) {
+      await this.context.globalState.update(this.lockKey(newId), lock);
+      await this.context.globalState.update(this.lockKey(oldId), undefined);
+    }
+    this.sessionId = newId;
+    this.view.post(this.chatState());
+  }
+
   private async refreshSessionAfterRun(sid: string): Promise<void> {
     try {
       const c = await this.ensureClient();
-      const msgs = await c.sessionMessages(sid);
+      const msgs = await c.fetchAllMessages(sid);
+      // /v1/runs never announces compression rotation (its events carry no
+      // session_id / _compressed), but the messages endpoint resolves
+      // compression chains to their current tip — a resolved id different
+      // from the one we sent means the server compacted this session
+      // mid-run. Adopt the tip and reload: the transcript IS the compacted
+      // copy, so the client stays in sync with what the model sees.
+      const resolved = msgs.session_id && msgs.session_id !== sid ? msgs.session_id : sid;
       const session = await c.getSession(sid).catch(() => null);
       if (session) {
         this.view.post({ type: 'session', session: session.session });
       }
-      this.postTranscript(sid, msgs.data);
+      if (resolved !== sid || session?.session.end_reason === 'compression') {
+        if (resolved !== sid) {
+          this.logInfo(`session ${sid} was compacted by the server — adopting continuation ${resolved}`);
+          await this.adoptCompressionChild(sid, resolved);
+        }
+        this.view.post({
+          type: 'sessionNote',
+          text: 'Session compacted by the server — transcript reloaded.',
+        });
+      }
+      this.postTranscript(resolved, msgs.data);
       void this.listSessions();
     } catch {
       // Non-fatal: the stream already delivered everything.
@@ -1511,16 +1666,92 @@ class VSHermes {
     await this.context.globalState.update(this.lockKey(sessionId), { model, provider });
   }
 
+  /** Provider for the display badge — only when it belongs to the model
+   *  shown. The API does not serialize the provider, so when the server's
+   *  reported model differs from the cached lock's model (e.g. a lock made
+   *  by the TUI while the plugin was closed) the provider is unknown and
+   *  the badge renders model-only rather than a mismatched pair. With no
+   *  session model or lock at all, falls back to the configured default's
+   *  provider. */
+  private displayProvider(): string | null {
+    const lock = this.sessionLockFor(this.sessionId ?? '');
+    const shownModel = this.sessionModel ?? lock?.model ?? null;
+    if (shownModel) {
+      return lock && lock.model === shownModel ? (lock.provider ?? null) : null;
+    }
+    return this.defaultSelection?.provider ?? null;
+  }
+
+  /** The API server advertises a stable virtual model alias ("hermes-agent")
+   *  that is not a real configured model — never display or store it. */
+  private cleanServerModel(model: string | null | undefined): string | null {
+    return model && model !== 'hermes-agent' ? model : null;
+  }
+
+  /** Fetch the configured default selection (/api/model/options picker
+   *  "current") so the no-session badge shows the real default instead of
+   *  the virtual "hermes-agent" alias. Fire-and-forget at activation;
+   *  re-posts state when the value changes. */
+  private async refreshDefaultSelection(): Promise<void> {
+    const c = await this.ensureClient().catch(() => null);
+    if (!c) return;
+    const opts = await c.modelOptions().catch(() => null);
+    if (!opts) return;
+    const next = {
+      model: opts.model ?? null,
+      provider: opts.provider ?? null,
+    };
+    if (
+      next.model !== this.defaultSelection?.model ||
+      next.provider !== this.defaultSelection?.provider
+    ) {
+      this.defaultSelection = next;
+      this.view.post(this.chatState());
+    }
+  }
+
+  /** Refresh the server-reported model for the current session (GET
+   *  /api/sessions/{id} → session.model). Makes the header/status bar
+   *  authoritative after a plugin reload and picks up locks made by other
+   *  clients (TUI). No-op when there is no session or the fetch fails. */
+  private async refreshSessionModel(): Promise<void> {
+    if (!this.sessionId) {
+      if (this.sessionModel !== null) {
+        this.sessionModel = null;
+        this.view.post(this.chatState());
+      }
+      return;
+    }
+    const c = await this.ensureClient().catch(() => null);
+    if (!c) return;
+    const s = await c.getSession(this.sessionId).catch(() => null);
+    const serverModel = this.cleanServerModel(s?.session?.model);
+    if (serverModel !== this.sessionModel) {
+      this.sessionModel = serverModel;
+      this.view.post(this.chatState());
+    }
+  }
+
   private async chooseModel(): Promise<void> {
     try {
       const c = await this.ensureClient();
       const opts = await c.modelOptions();
       const providers = opts.providers.filter((p) => p.authenticated || p.is_current);
+      // The server's is_current marks the GLOBAL default provider — NOT the
+      // session's actual provider (the API never serializes the session
+      // lock; the plugin replays the lock it recorded on every run). So
+      // "current" for the picker = the locked provider/model of the active
+      // session when a lock exists, else the server default.
+      const lock = this.sessionId ? this.sessionLockFor(this.sessionId) : null;
+      const currentProvider =
+        lock?.provider ?? opts.providers.find((p) => p.is_current)?.slug ?? null;
+      const currentModel = lock?.model ?? null;
       const provider = await vscode.window.showQuickPick(
         providers.map((p) => ({
           label: p.name,
-          description: p.is_current ? 'current' : p.auth_type ?? '',
+          description: p.slug === currentProvider ? 'current' : p.auth_type ?? '',
           detail: p.warning ?? undefined,
+          picked: p.slug === currentProvider,
           provider: p,
         })),
         { placeHolder: 'Provider' },
@@ -1531,10 +1762,17 @@ class VSHermes {
       const models = provider.provider.models.map((m) =>
         typeof m === 'string' ? m : m.id,
       );
-      const model = await vscode.window.showQuickPick(models, {
-        placeHolder: `Model (${provider.provider.name})`,
-      });
-      if (!model) return;
+      const picked = await vscode.window.showQuickPick(
+        models.map((m) => ({
+          label: m,
+          description:
+            provider.provider.slug === currentProvider && m === currentModel ? 'current' : '',
+          picked: provider.provider.slug === currentProvider && m === currentModel,
+        })),
+        { placeHolder: `Model (${provider.provider.name})` },
+      );
+      if (!picked) return;
+      const model = picked.label;
       if (!this.sessionId) {
         await this.newSession();
         if (!this.sessionId) return;
@@ -1542,9 +1780,10 @@ class VSHermes {
       const lockRes = await c.lockModel(this.sessionId, model, provider.provider.slug);
       await this.rememberSessionLock(this.sessionId, lockRes);
       const lockedModel = lockRes.runtime?.model || model;
-      this.view.post({ type: 'model', model: lockedModel });
+      this.sessionModel = lockedModel;
+      this.view.post({ type: 'model', model: lockedModel, provider: provider.provider.slug });
       this.view.postInfo(`Model locked to ${lockedModel} for this session.`);
-      this.statusBar.connected(this.pluginVersion, this.health?.version ?? null, lockedModel, getBaseUrl());
+      this.statusBar.connected(this.pluginVersion, this.health?.version ?? null, lockedModel, getBaseUrl(), provider.provider.slug);
     } catch (err) {
       this.reportError(err);
     }
@@ -1557,6 +1796,11 @@ class VSHermes {
       case 'ready':
         this.logInfo('webview booted (ready received)');
         this.view.post(this.chatState());
+        // The initial state shows the cached lock / server default; the
+        // server-reported session model arrives async and re-posts state
+        // so the header reflects the true lock (even foreign TUI locks).
+        void this.refreshSessionModel();
+        void this.refreshDefaultSelection();
         void this.listSessions();
         if (getCheckSyncOnStartup()) void this.runSyncCheck(false);
         break;
@@ -1595,7 +1839,8 @@ class VSHermes {
             const lockRes = await c.lockModel(this.sessionId, msg.model, msg.provider);
             await this.rememberSessionLock(this.sessionId, lockRes);
             const lockedModel = lockRes.runtime?.model || msg.model;
-            this.view.post({ type: 'model', model: lockedModel });
+            this.sessionModel = lockedModel;
+            this.view.post({ type: 'model', model: lockedModel, provider: msg.provider });
           } catch (err) {
             this.reportError(err);
           }

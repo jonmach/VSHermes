@@ -14,6 +14,13 @@ export interface EndpointProfile {
   name: string;
   /** Hermes API Server base URL (e.g. http://192.168.1.20:8642). */
   url: string;
+  /** Optional model context window (tokens) used to budget the history the
+   *  plugin sends with every /v1/runs call. The API server exposes no
+   *  context numbers (verified 0.20.5 — /api/model/info 404s, /api/model/
+   *  options carries none), so this is per-endpoint config: set 1048576 for
+   *  deepseek 1M-class models, or the model's num_ctx for local models.
+   *  Falls back to the legacy vsh.hermes.contextLength setting, then 128K. */
+  contextLength?: number;
 }
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);

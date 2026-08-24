@@ -160,6 +160,122 @@ describe('webview bundle (dist/media/chat.js)', () => {
     expect(conn.textContent).toContain('10.0.0.5:8642');
   });
 
+  it('renders provider · model in the header badge from state', () => {
+    const { dom, post } = bootWebview();
+    post({
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://10.0.0.5:8642',
+      syncReport: null,
+      sessionId: 's1',
+      model: 'deepseek-v4-flash',
+      provider: 'deepseek',
+      sessions: [],
+      slashCommands: [],
+      steerAvailable: true,
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    });
+    const conn = dom.window.document.getElementById('conn')!;
+    expect(conn.textContent).toContain('● Hermes (10.0.0.5:8642) · deepseek · deepseek-v4-flash');
+  });
+
+  it('renders model-only in the header when no provider is known', () => {
+    const { dom, post } = bootWebview();
+    post({
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://10.0.0.5:8642',
+      syncReport: null,
+      sessionId: 's1',
+      model: 'deepseek-v4-flash',
+      sessions: [],
+      slashCommands: [],
+      steerAvailable: true,
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    });
+    const conn = dom.window.document.getElementById('conn')!;
+    expect(conn.textContent).toContain('● Hermes (10.0.0.5:8642) · deepseek-v4-flash');
+    expect(conn.textContent).not.toContain('· ·');
+  });
+
+  it('appends a persistent model-change note and updates the header on a model lock', () => {
+    const { dom, post } = bootWebview();
+    post({
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      syncReport: null,
+      sessionId: 's1',
+      model: 'deepseek-v4-flash',
+      provider: 'deepseek',
+      sessions: [],
+      slashCommands: [],
+      steerAvailable: true,
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    });
+    post({ type: 'model', model: 'qwen3.6:27b', provider: 'ollama' });
+    const conn = dom.window.document.getElementById('conn')!;
+    expect(conn.textContent).toContain('ollama · qwen3.6:27b');
+    const text = dom.window.document.getElementById('messages')!.textContent;
+    expect(text).toContain('⇄ Model → ollama · qwen3.6:27b');
+  });
+
+  it('does not duplicate the note when the model message repeats the current model', () => {
+    const { dom, post } = bootWebview();
+    post({
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      syncReport: null,
+      sessionId: 's1',
+      model: 'deepseek-v4-flash',
+      provider: 'deepseek',
+      sessions: [],
+      slashCommands: [],
+      steerAvailable: true,
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    });
+    post({ type: 'model', model: 'qwen3.6:27b', provider: 'ollama' });
+    post({ type: 'model', model: 'qwen3.6:27b', provider: 'ollama' });
+    const text = dom.window.document.getElementById('messages')!.textContent;
+    expect(text.match(/⇄ Model →/g) ?? []).toHaveLength(1);
+  });
+
+  it('keeps the model-change note across the post-run transcript rebuild', () => {
+    const { dom, post } = bootWebview();
+    post({
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      syncReport: null,
+      sessionId: 's1',
+      model: 'deepseek-v4-flash',
+      provider: 'deepseek',
+      sessions: [],
+      slashCommands: [],
+      steerAvailable: true,
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    });
+    post({ type: 'model', model: 'qwen3.6:27b', provider: 'ollama' });
+    // Host re-posts the full transcript after the run — the note must survive.
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [
+        { id: 1, role: 'user', content: 'hello' },
+        { id: 2, role: 'assistant', content: 'hi' },
+      ],
+    });
+    const text = dom.window.document.getElementById('messages')!.textContent;
+    expect(text).toContain('⇄ Model → ollama · qwen3.6:27b');
+    expect(text).toContain('hello');
+  });
+
   it('removes the start hint once a session is active', () => {
     const { dom, post } = bootWebview();
     post({
@@ -593,6 +709,38 @@ describe('webview bundle (dist/media/chat.js)', () => {
     const text = dom.window.document.getElementById('messages')!.textContent;
     expect(text).toContain('say hello too — delivered');
     expect(text).not.toContain('— accepted');
+  });
+
+  it('renders session notes as persistent info notes that survive the rebuild', () => {
+    // Compaction / history-trim notices ride the persistent-note machinery:
+    // they appear immediately AND survive the post-run transcript rebuild
+    // (which would wipe a transient addNote).
+    const { dom, post } = bootWebview();
+    post({
+      type: 'state',
+      connected: true,
+      baseUrl: 'http://127.0.0.1:8642',
+      syncReport: null,
+      sessionId: 's1',
+      model: 'm1',
+      sessions: [],
+      slashCommands: [],
+      steerAvailable: true,
+      maxImageBytes: 8388608,
+      maxImageDimension: 4096,
+    } as unknown as HostMsg);
+    post({ type: 'sessionNote', text: 'Session compacted by the server — transcript reloaded.' } as unknown as HostMsg);
+    let text = dom.window.document.getElementById('messages')!.textContent;
+    expect(text).toContain('Session compacted by the server — transcript reloaded.');
+    // Post-run rebuild must keep the note.
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [{ role: 'user', content: 'hello' }],
+    } as unknown as HostMsg);
+    text = dom.window.document.getElementById('messages')!.textContent;
+    expect(text).toContain('hello');
+    expect(text).toContain('Session compacted by the server — transcript reloaded.');
   });
 
   it('keeps steer records across the post-run transcript rebuild', () => {

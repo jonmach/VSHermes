@@ -209,15 +209,49 @@ export class HermesClient {
     });
   }
 
+  /** Fetch the complete transcript (oldest→newest), paginating past the
+   *  server's 500-message page cap. The response's session_id is the
+   *  server-RESOLVED id: the messages endpoint resolves compression chains
+   *  to their current tip (verified live), so a resolved id different from
+   *  the one asked for is how a client detects that the session was
+   *  compacted — the /v1/runs surface never announces rotation. */
+  async fetchAllMessages(id: string): Promise<MessagesResponse> {
+    const data: ChatMessage[] = [];
+    let sessionId = id;
+    const PAGE = 200;
+    for (let offset = 0; ; offset += PAGE) {
+      const page = await this.sessionMessages(id, PAGE, offset);
+      if (page.session_id) sessionId = page.session_id;
+      data.push(...page.data);
+      if (page.data.length < PAGE) break;
+    }
+    return {
+      object: 'list',
+      session_id: sessionId,
+      data,
+      pagination: { limit: PAGE, offset: 0, order: 'oldest', returned: data.length },
+    };
+  }
+
   deleteSession(id: string): Promise<void> {
     return this.request<void>(`/api/sessions/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
   }
 
-  sessionMessages(id: string, limit = 500): Promise<MessagesResponse> {
+  /** GET /api/sessions/{id}/messages.
+   *  With NO limit → the server's default page: the LATEST 500 messages
+   *  (cheap poll for the tail). With a limit → deterministic oldest-first
+   *  pagination via limit+offset+order=oldest (verified live 0.20.5: an
+   *  explicit limit without order defaults to OLDEST, which would silently
+   *  miss the newest messages of a >500-message session). */
+  sessionMessages(id: string, limit?: number, offset = 0): Promise<MessagesResponse> {
+    const query =
+      limit === undefined
+        ? ''
+        : `?limit=${limit}&offset=${offset}&order=oldest`;
     return this.request<MessagesResponse>(
-      `/api/sessions/${encodeURIComponent(id)}/messages?limit=${limit}`,
+      `/api/sessions/${encodeURIComponent(id)}/messages${query}`,
       { method: 'GET' },
     );
   }
@@ -308,7 +342,13 @@ export class HermesClient {
 
   // ── runs ─────────────────────────────────────────────────────────
 
-  createRun(model: string | undefined, input: UserMessage, sessionId?: string, provider?: string): Promise<RunInfo> {
+  createRun(
+    model: string | undefined,
+    input: UserMessage,
+    sessionId?: string,
+    provider?: string,
+    history?: { role: string; content: string }[],
+  ): Promise<RunInfo> {
     // The runs API needs the model+provider explicitly (it does NOT fall
     // back to the session's locked model — that lock is honored only by the
     // session-chat surface, verified live 0.20.5) and persists the turn into
@@ -316,6 +356,9 @@ export class HermesClient {
     // OpenAI-style message array whose last item carries `content` —
     // VSHermes parts are content blocks, so wrap them in a user message (a
     // bare parts array 400s with "No user message found in input").
+    // `history` rides the explicit conversation_history field — the runs
+    // surface is stateless BY DESIGN (it never loads session history), so
+    // this is the client's only way to give the model context.
     const body: Record<string, unknown> = {};
     body.input =
       typeof input === 'string'
@@ -324,6 +367,7 @@ export class HermesClient {
     if (model) body.model = model;
     if (provider) body.provider = provider;
     if (sessionId) body.session_id = sessionId;
+    if (history && history.length > 0) body.conversation_history = history;
     return this.request<RunInfo>('/v1/runs', {
       method: 'POST',
       body: JSON.stringify(body),
@@ -355,6 +399,7 @@ export class HermesClient {
     onEvent: (event: StreamEvent) => void,
     signal?: AbortSignal,
     onKeepalive?: () => void,
+    history?: { role: string; content: string }[],
   ): StreamHandle {
     const controller = new AbortController();
     const onAbort = () => controller.abort();
@@ -363,7 +408,7 @@ export class HermesClient {
     const done = (async () => {
       let run: RunInfo;
       try {
-        run = await this.createRun(model, message, sessionId, provider);
+        run = await this.createRun(model, message, sessionId, provider, history);
       } catch (err) {
         if ((err as Error).name === 'AbortError') return;
         throw err;

@@ -187,6 +187,11 @@ const state: {
   assistantSeq: number;
   /** First assistant-message seq per run — steer rows anchor before it. */
   runAnchorSeq: Map<string, number>;
+  /** Active model/provider for the header badge (lock or server default). */
+  model: string | null;
+  provider: string | null;
+  /** Server base URL (drives the header host display). */
+  baseUrl: string;
 } = {
   connected: false,
   sessionId: null,
@@ -223,6 +228,9 @@ const state: {
   steerSeq: 0,
   assistantSeq: 0,
   runAnchorSeq: new Map(),
+  model: null,
+  provider: null,
+  baseUrl: '',
 };
 
 /**
@@ -920,6 +928,24 @@ function serverHost(url: string): string {
   }
 }
 
+/** Render the header badge: ● Hermes (host) · provider · model. */
+function renderConn(): void {
+  if (state.connected) {
+    const host = state.baseUrl ? serverHost(state.baseUrl) : '';
+    let label = host ? `● Hermes (${host})` : '● Hermes';
+    if (state.model) {
+      label += state.provider ? ` · ${state.provider} · ${state.model}` : ` · ${state.model}`;
+    }
+    connEl.textContent = label;
+    connEl.style.color = 'var(--vsh-accent)';
+    connEl.title = state.baseUrl;
+  } else {
+    connEl.textContent = `○ offline (${state.baseUrl})`;
+    connEl.style.color = 'var(--vsh-error)';
+    connEl.title = state.baseUrl;
+  }
+}
+
 // ── sync banner ────────────────────────────────────────────────────
 
 function renderSyncBanner(report: SyncReport | null): void {
@@ -1492,6 +1518,9 @@ function onHostMessage(msg: HostMessage): void {
     case 'state':
       state.connected = msg.connected;
       state.remote = msg.remote;
+      state.baseUrl = msg.baseUrl;
+      state.model = msg.model;
+      state.provider = msg.provider ?? null;
       updateAttachAffordances();
       if (msg.sessionId !== state.sessionId) {
         // The chat window shows the current session's messages only — any
@@ -1505,8 +1534,7 @@ function onHostMessage(msg: HostMessage): void {
       state.maxImageBytes = msg.maxImageBytes;
       state.maxImageDimension = msg.maxImageDimension;
       if (msg.slashCommands.length > 0) state.slashCommands = msg.slashCommands;
-      connEl.textContent = msg.connected ? `● Hermes (${serverHost(msg.baseUrl)})` : `○ offline (${msg.baseUrl})`;
-      connEl.style.color = msg.connected ? 'var(--vsh-accent)' : 'var(--vsh-error)';
+      renderConn();
       if (msg.connected && !msg.sessionId) {
         ensureNoSessionHint();
       } else {
@@ -1515,7 +1543,8 @@ function onHostMessage(msg: HostMessage): void {
       renderSyncBanner(msg.syncReport);
       break;
     case 'session':
-      // Session metadata — the model display moved to the status bar.
+      // Session metadata — the model display lives in the header badge
+      // (renderConn, driven by the state message) and the status bar.
       break;
     case 'messages':
       renderMessages(msg.messages, msg.sessionId);
@@ -1555,6 +1584,12 @@ function onHostMessage(msg: HostMessage): void {
     case 'info':
       addNote(msg.text);
       break;
+    case 'sessionNote':
+      // Neutral persistent note (compaction / history-trim notices). Rides
+      // the same machinery as failure notes so it survives the post-run
+      // transcript rebuild; anchored to the run's user message when known.
+      addPersistentNote(msg.text, false);
+      break;
     case 'steerResult':
       // Persistent record of an accepted steer (host sends this only on a
       // 200). Rendered as "✎ steer HH:MM:SS — <note> — accepted", flipping
@@ -1577,7 +1612,24 @@ function onHostMessage(msg: HostMessage): void {
       addNote(msg.message, true);
       break;
     case 'model':
-      // Model lock changes — the status bar reflects the active model.
+      // Model lock changes: update the header badge and leave a persistent
+      // note in the transcript so the switch is visible in the chat itself.
+      // The server does not persist model changes as messages, so the note
+      // is client-side — it survives transcript rebuilds (re-attached by
+      // renderMessages) and is cleared on session switch, same constraint
+      // as steer records. Only actual changes get a row; the initial model
+      // arriving via the state message renders in the header without one.
+      if (msg.model && msg.model !== state.model) {
+        const t = new Date();
+        const hh = String(t.getHours()).padStart(2, '0');
+        const mm = String(t.getMinutes()).padStart(2, '0');
+        const ss = String(t.getSeconds()).padStart(2, '0');
+        const who = msg.provider ? `${msg.provider} · ` : '';
+        addPersistentNote(`⇄ Model → ${who}${msg.model} — ${hh}:${mm}:${ss}`, false);
+      }
+      state.model = msg.model;
+      state.provider = msg.provider ?? state.provider;
+      renderConn();
       break;
     case 'fileResults':
       if (msg.query === state.fileQuery) {

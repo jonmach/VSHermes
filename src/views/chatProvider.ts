@@ -110,6 +110,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     #header .spacer { flex: 1; }
     #header button { background: none; border: none; color: var(--vsh-fg); cursor: pointer; font-size: 14px; padding: 2px 4px; border-radius: 3px; }
     #header button:hover { background: var(--vsh-user-bubble); }
+    #conn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #conn { font-size: 11px; color: var(--vsh-muted); }
     #messages { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
     .msg { display: flex; flex-direction: column; gap: 4px; max-width: 100%; }

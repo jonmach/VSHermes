@@ -326,6 +326,11 @@ export interface ProviderOption {
 
 export interface ModelOptionsResponse {
   providers: ProviderOption[];
+  /** Configured default (picker "current") — model/provider the server
+   *  would use for an un-locked session. Distinct from the /v1/capabilities
+   *  virtual alias ("hermes-agent"). */
+  model?: string | null;
+  provider?: string | null;
 }
 
 // ── Skills / toolsets ──────────────────────────────────────────────

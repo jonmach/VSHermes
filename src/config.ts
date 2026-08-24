@@ -90,6 +90,21 @@ export function getBaseUrl(): string {
   return getLocalUrl();
 }
 
+/**
+ * Model context window (tokens) for the history budget. The gateway exposes
+ * no context numbers to clients, so this is config: endpoint profile
+ * contextLength → legacy vsh.hermes.contextLength setting → 128K default.
+ */
+export function getContextLength(): number {
+  const active = getActiveEndpoint();
+  if (active?.contextLength && active.contextLength > 0) return active.contextLength;
+  const legacy = vscode.workspace
+    .getConfiguration('vsh.hermes')
+    .get<number | null>('contextLength', null);
+  if (legacy && legacy > 0) return legacy;
+  return 128_000;
+}
+
 /** Where the API key was found (for logging/diagnostics). */
 export type KeySource = 'secret' | 'env-var' | 'hermes-env' | 'none';
 

@@ -1,7 +1,7 @@
 /**
  * Status bar item: connection state + sync warning + active model.
  *
- *   $(plug)  Hermes v0.20.0 — deepseek-v4-flash     (connected)
+ *   $(plug)  Hermes v0.20.0 — deepseek · deepseek-v4-flash     (connected)
  *   $(warning) VSHermes incompatible — check      (compatibility problem)
  *   $(circle-slash) Hermes offline                  (not reachable)
  */
@@ -29,10 +29,11 @@ export class StatusBar {
     this.set('Connecting to Hermes…', 'VSHermes — connecting to the Hermes API server', 'sync~spin');
   }
 
-  connected(pluginVersion: string, version: string | null, model: string | null, url: string): void {
+  connected(pluginVersion: string, version: string | null, model: string | null, url: string, provider?: string | null): void {
     const v = version ? `v${version}` : '?';
+    const modelPart = model ? `${provider ? `${provider} · ` : ''}${model}` : '';
     this.set(
-      `Hermes ${v}${model ? ` — ${model}` : ''}`,
+      `Hermes ${v}${modelPart ? ` — ${modelPart}` : ''}`,
       `VSHermes ${pluginVersion} — connected to Hermes ${v} at ${url}. Click to open the chat view.`,
       'plug',
     );

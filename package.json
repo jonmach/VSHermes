@@ -207,7 +207,12 @@
         "vsh.hermes.endpoints": {
           "type": "array",
           "default": [],
-          "description": "Named Hermes API Server endpoint profiles: [{ id, name, url }]. API keys are stored per profile in VS Code SecretStorage, never here."
+          "description": "Named Hermes API Server endpoint profiles: [{ id, name, url, contextLength? }]. API keys are stored per profile in VS Code SecretStorage, never here. contextLength (optional) is the model context window in tokens — the server exposes no context numbers, and the plugin uses this to budget the history it sends with every run."
+        },
+        "vsh.hermes.contextLength": {
+          "type": "number",
+          "default": 128000,
+          "description": "Model context window in tokens for the active endpoint (used to budget the conversation history the plugin sends with every /v1/runs call — the Hermes API server does not expose context sizes). Set 1048576 for deepseek 1M-class models; keep at the model's num_ctx for local models. Overridden by the active endpoint profile's contextLength."
         },
         "vsh.hermes.activeEndpoint": {
           "type": ["string", "null"],

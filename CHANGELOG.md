@@ -1,7 +1,33 @@
 # Changelog
 
-## 2.0.12 (2026-08-23)
+## 2.0.12 (2026-08-24)
 
+- **Provider and model are visible everywhere.** The chat header now reads
+  "● Hermes (host:port) · provider · model" and the status bar shows the same
+  pair, so it is always obvious which model the session is actually on. Model
+  switches leave a persistent "⇄ Model → …" row in the chat itself, so the
+  timeline shows when the model changed.
+- **Long sessions keep their context.** Every message now carries the
+  conversation's history with it. Previously each message ran against the
+  server as a fresh turn, so an immediate follow-up ("Yes") could be answered
+  with "this is a new session" — the model had no idea what you were replying
+  to. History is budgeted to the model's window via the new `contextLength`
+  setting (default 128K; set 1048576 for 1M-window models like deepseek
+  v4-flash, or the model's num_ctx for local models).
+- **Complete transcripts.** Sessions longer than 500 messages now load in
+  full. Previously only the oldest 500 messages were fetched, so the most
+  recent turns of a long session could be missing from the view.
+- **Server-side compaction is visible and synced.** When the server compacts
+  a long session mid-conversation, the plugin follows the continuation,
+  reloads the transcript to match what the server holds, and shows a neutral
+  note ("Session compacted by the server — transcript reloaded.") instead of
+  silently diverging.
+- **The model picker shows the real current provider.** The provider dropdown
+  previously marked the gateway's global default as "current" even when the
+  session was locked to a different provider (e.g. deepseek shown as current
+  while the session ran on ollama). It now marks — and pre-selects — the
+  session's actual provider and model, falling back to the default only when
+  no session lock exists.
 - **Model locks carry the provider.** Locking a model from the picker now records
   the provider alongside it, so the next message in the session actually runs on
   the provider you picked — previously a lock without a provider could silently
