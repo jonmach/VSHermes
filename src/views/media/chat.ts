@@ -499,27 +499,22 @@ function insertNoteElement(text: string, error: boolean, userOrdinal: number | n
 }
 
 /**
- * Transient stall indicator. The host posts `stream:stalled` when the
- * gateway is grinding (keepalives flowing, no events) or the connection
- * appears dead (no bytes for a while). Replaces any prior stall note and
- * is removed by clearStallNote() when real progress resumes. Both kinds
- * are neutral status notes — a stall is a status, not a verdict. If the
- * stream ends while a stall note is still showing, stream:ended persists
- * it as a neutral, copyable note so the text survives the transcript
- * rebuild instead of vanishing.
+ * Transient stall indicator. The host posts `stream:stalled` when no
+ * events have arrived for a while (a slow provider or a long retry chain —
+ * the plugin cannot tell which, and the note must not guess). Replaces any
+ * prior stall note and is removed by clearStallNote() when real progress
+ * resumes. It is a neutral status note — a stall is a status, not a
+ * verdict. A genuinely dropped gateway surfaces via the stream-end path
+ * (stream:ended with an error), not this note. If the stream ends while a
+ * stall note is still showing, stream:ended persists it as a neutral,
+ * copyable note so the text survives the transcript rebuild instead of
+ * vanishing.
  */
-function showStallNote(kind: 'grinding' | 'dead'): void {
+function showStallNote(): void {
   clearStallNote();
   const el = document.createElement('div');
-  if (kind === 'dead') {
-    el.className = 'info-note';
-    el.textContent =
-      'No data from the gateway for a while — the connection may have dropped. ' +
-      'Check that the gateway is still running, or stop and try again.';
-  } else {
-    el.className = 'info-note';
-    el.textContent = 'Still working…';
-  }
+  el.className = 'info-note';
+  el.textContent = 'Still working…';
   messagesEl.appendChild(el);
   state.stallNote = el;
   scrollBottom();
@@ -1552,7 +1547,7 @@ function onHostMessage(msg: HostMessage): void {
       dismissStaleApproval();
       break;
     case 'stream:stalled':
-      showStallNote(msg.kind);
+      showStallNote();
       break;
     case 'lineage':
       addLineageNote(msg.text);

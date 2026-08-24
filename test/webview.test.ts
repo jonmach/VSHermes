@@ -1331,10 +1331,10 @@ describe('webview bundle (dist/media/chat.js)', () => {
     expect(messages.querySelector('.info-note')?.textContent).toContain('cancelled');
   });
 
-  it('shows a "still working" info note when the gateway grinds (keepalives only)', () => {
+  it('shows a "still working" info note when the stream stalls', () => {
     const { dom, post } = bootWebview();
     post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
-    post({ type: 'stream:stalled', kind: 'grinding' } as unknown as HostMsg);
+    post({ type: 'stream:stalled' } as unknown as HostMsg);
     const messages = dom.window.document.getElementById('messages')!;
     const note = messages.querySelector('.info-note');
     expect(note).not.toBeNull();
@@ -1343,29 +1343,17 @@ describe('webview bundle (dist/media/chat.js)', () => {
     expect(messages.querySelector('.error-note')).toBeNull();
   });
 
-  it('shows a neutral note when the connection goes dead', () => {
+  it('keeps a single stall note and clears it on real progress', () => {
     const { dom, post } = bootWebview();
     post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
-    post({ type: 'stream:stalled', kind: 'dead' } as unknown as HostMsg);
-    const messages = dom.window.document.getElementById('messages')!;
-    const note = messages.querySelector('.info-note');
-    expect(note).not.toBeNull();
-    expect(note!.textContent).toContain('connection');
-    // A stall is a status, not a verdict — no error styling.
-    expect(messages.querySelector('.error-note')).toBeNull();
-  });
-
-  it('replaces a stall note when the kind escalates and clears it on real progress', () => {
-    const { dom, post } = bootWebview();
-    post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
-    post({ type: 'stream:stalled', kind: 'grinding' } as unknown as HostMsg);
+    post({ type: 'stream:stalled' } as unknown as HostMsg);
     const messages = dom.window.document.getElementById('messages')!;
     expect(messages.querySelectorAll('.info-note')).toHaveLength(1);
-    // Escalation replaces (not stacks) the note; both kinds are neutral.
-    post({ type: 'stream:stalled', kind: 'dead' } as unknown as HostMsg);
+    // Re-posted stalls replace (not stack) the note; no verdict styling.
+    post({ type: 'stream:stalled' } as unknown as HostMsg);
     expect(messages.querySelectorAll('.info-note')).toHaveLength(1);
     expect(messages.querySelectorAll('.error-note')).toHaveLength(0);
-    expect(messages.querySelector('.info-note')!.textContent).toContain('connection');
+    expect(messages.querySelector('.info-note')!.textContent).toContain('Still working');
     // A real delta means progress — the stall note disappears.
     post({ type: 'stream', event: { type: 'assistant.delta', delta: 'hi' } } as unknown as HostMsg);
     expect(messages.querySelector('.error-note')).toBeNull();
@@ -1395,15 +1383,15 @@ describe('webview bundle (dist/media/chat.js)', () => {
       messages: [{ role: 'user', content: 'first message' }],
     } as unknown as HostMsg);
     post({ type: 'stream', event: { type: 'run.started' } } as unknown as HostMsg);
-    post({ type: 'stream:stalled', kind: 'dead' } as unknown as HostMsg);
+    post({ type: 'stream:stalled' } as unknown as HostMsg);
     const messages = dom.window.document.getElementById('messages')!;
     // A terminal event (done) is not progress — the note stays up.
     post({ type: 'stream', event: { type: 'done' } } as unknown as HostMsg);
-    expect(messages.querySelector('.info-note')?.textContent).toContain('connection');
+    expect(messages.querySelector('.info-note')?.textContent).toContain('Still working');
     post({ type: 'stream:ended', sessionId: 's1' } as unknown as HostMsg);
     const note = messages.querySelector('.info-note');
     expect(note).not.toBeNull();
-    expect(note!.textContent).toContain('connection');
+    expect(note!.textContent).toContain('Still working');
     expect(messages.querySelector('.error-note')).toBeNull();
     // Survives the post-run transcript rebuild (host re-posts messages),
     // still anchored under the user message that triggered the run.
@@ -1414,7 +1402,7 @@ describe('webview bundle (dist/media/chat.js)', () => {
     } as unknown as HostMsg);
     const rebuilt = messages.querySelector('.info-note');
     expect(rebuilt).not.toBeNull();
-    expect(rebuilt!.textContent).toContain('connection');
+    expect(rebuilt!.textContent).toContain('Still working');
     const user = Array.from(messages.querySelectorAll('.msg.user .bubble'))[0];
     expect(user!.textContent).toBe('first message');
     expect(rebuilt!.previousElementSibling?.textContent).toContain('first message');

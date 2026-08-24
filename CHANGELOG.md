@@ -7,12 +7,17 @@
   the provider you picked — previously a lock without a provider could silently
   fall back to the default and the follow-up chat failed with a provider-mismatch
   error.
-- **Stall notes survive the stream end.** A "Still working…" or connection note is
+- **Stall notes survive the stream end.** A "Still working…" note is
   no longer wiped when the stream finishes — it stays in place as a neutral,
   copyable row, so the text is still there to read or select.
 - **Neutral stall wording.** The 45-second "Still working" note no longer
   speculates about the gateway's health — it now reads just "Still working…":
   a status, not a verdict.
+- **The connection note is gone.** The "No data from the gateway for a while"
+  note no longer appears. It could fire while a response was still actively
+  streaming in — a busy run could be declared dead mid-stream — and a
+  genuinely dropped gateway is already surfaced when the stream ends. The
+  neutral "Still working…" silence-breaker remains.
 
 ## 2.0.11 (2026-08-22)
 

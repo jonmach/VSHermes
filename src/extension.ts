@@ -57,18 +57,16 @@ export function activate(context: vscode.ExtensionContext): VSHermes {
 }
 
 /**
- * Stall watchdog thresholds. The gateway sends an SSE keepalive comment
- * every 30s while a turn is live, so:
- *  - STALL_GRIND_MS: no EVENTS for this long (but keepalives still
- *    arriving) → the gateway is grinding through provider retries/fallbacks.
- *    Surface "still working" so the run doesn't look ignored.
- *  - STALL_DEAD_MS: no BYTES at all for this long (several missed
- *    keepalives) → connection dead / gateway hung. Surface an error note.
- * The watchdog checks every STALL_CHECK_MS and notifies once per episode
- * (reset when a real event arrives).
+ * Stall watchdog threshold. The plugin cannot distinguish a slow provider
+ * from a dead gateway while the SSE socket is still open — silence is
+ * ambiguous, so the only honest silence-breaker is a neutral status note.
+ * STALL_GRIND_MS: no EVENTS for this long → surface "Still working…" so the
+ * run doesn't look ignored. A genuinely dropped gateway is caught by the
+ * stream-end path (EOF without `done` → reconcileRunStatus), not by this
+ * timer. The watchdog checks every STALL_CHECK_MS and notifies once per
+ * episode (reset when a real event arrives).
  */
 const STALL_GRIND_MS = 45_000;
-const STALL_DEAD_MS = 120_000;
 const STALL_CHECK_MS = 5_000;
 
 class VSHermes {
@@ -83,21 +81,17 @@ class VSHermes {
   private activeRunId: string | null = null;
   private stream: StreamHandle | null = null;
   /**
-   * Stall watchdog state. The gateway streams `: keepalive` comment frames
-   * every 30s while a turn runs, so the plugin can distinguish three states:
-   *   - events flowing → normal streaming
-   *   - keepalives only, no events → gateway is grinding (provider retries /
-   *     fallback chain) but the connection is alive
-   *   - no bytes at all → connection dead / gateway hung
-   * Timestamps are updated by onStreamEvent (events) and the onKeepalive
-   * callback (comment frames); a periodic check posts stream:stalled once
-   * per episode so the webview can surface "still working" instead of
-   * looking like the query was ignored.
+   * Stall watchdog state. Events update lastEventAt; a periodic check posts
+   * `stream:stalled` once per episode (45s without events) so the webview
+   * can surface "Still working…" instead of looking like the query was
+   * ignored. A real event resets the episode. There is deliberately no
+   * "dead connection" verdict here: while the socket is open, silence is
+   * indistinguishable from a slow provider, and a genuinely dropped gateway
+   * surfaces via the stream-end / reconcileRunStatus path instead.
    */
   private stallTimer: ReturnType<typeof setInterval> | null = null;
   private lastEventAt = 0;
-  private lastKeepaliveAt = 0;
-  private stallNotified: 'grinding' | 'dead' | null = null;
+  private stallNotified = false;
   /** True when the server's terminal `done` event was seen. Clean EOF
    *  without it means the stream dropped mid-run (gateway restart, network
    *  cut) — the run status is then polled to reconcile what happened. */
@@ -1176,8 +1170,7 @@ class VSHermes {
       this.abortStream();
       // Reset stall-watchdog state for the new turn.
       this.lastEventAt = Date.now();
-      this.lastKeepaliveAt = Date.now();
-      this.stallNotified = null;
+      this.stallNotified = false;
       this.sawStreamDone = false;
       // The runs API needs the model explicitly (it does NOT fall back to the
       // session's locked model) — resolve it from the session like the
@@ -1198,10 +1191,6 @@ class VSHermes {
         parts,
         (event) => this.onStreamEvent(event),
         undefined,
-        () => {
-          // Keepalive comment frame — connection alive, gateway grinding.
-          this.lastKeepaliveAt = Date.now();
-        },
       );
       this.startStallWatchdog();
       try {
@@ -1248,7 +1237,7 @@ class VSHermes {
   private onStreamEvent(event: StreamEvent): void {
     this.lastEventAt = Date.now();
     // Any real event is progress — a previously shown stall note is stale.
-    this.stallNotified = null;
+    this.stallNotified = false;
     if (event.type === 'run.started' && event.run_id) {
       this.activeRunId = event.run_id;
       this.logInfo(`run started: ${event.run_id}`);
@@ -1264,24 +1253,17 @@ class VSHermes {
 
   /**
    * Start the periodic stall check for the current stream. Posts at most
-   * one `stream:stalled` per episode; a real event resets the episode.
+   * one `stream:stalled` per episode (45s without events); a real event
+   * resets the episode.
    */
   private startStallWatchdog(): void {
     this.stopStallWatchdog();
     this.stallTimer = setInterval(() => {
       const now = Date.now();
       const idleEvents = now - this.lastEventAt;
-      const idleBytes = now - this.lastKeepaliveAt;
-      if (idleBytes > STALL_DEAD_MS) {
-        if (this.stallNotified !== 'dead') {
-          this.stallNotified = 'dead';
-          this.view.post({ type: 'stream:stalled', kind: 'dead' });
-        }
-      } else if (idleEvents > STALL_GRIND_MS) {
-        if (this.stallNotified !== 'grinding') {
-          this.stallNotified = 'grinding';
-          this.view.post({ type: 'stream:stalled', kind: 'grinding' });
-        }
+      if (idleEvents > STALL_GRIND_MS && !this.stallNotified) {
+        this.stallNotified = true;
+        this.view.post({ type: 'stream:stalled' });
       }
     }, STALL_CHECK_MS);
   }
