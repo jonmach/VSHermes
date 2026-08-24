@@ -89,6 +89,7 @@ describe.skipIf(!live)('live Hermes API Server', () => {
     const handle = client.runChatStream(
       created.session.id,
       undefined,
+      undefined,
       parts,
       (ev) => events.push(ev),
     );

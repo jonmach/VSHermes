@@ -16,6 +16,7 @@ import type {
   ChatMessage,
   HealthStatus,
   MessagePart,
+  ModelLockResponse,
   SessionSummary,
   StreamEvent,
 } from './api/types';
@@ -230,7 +231,8 @@ class VSHermes {
       const c = await this.ensureClient();
       this.health = await c.health();
       this.caps = await c.capabilities();
-      this.statusBar.connected(this.pluginVersion, this.health.version, this.caps.model, getBaseUrl());
+      const lock = this.sessionLockFor(this.sessionId ?? '');
+      this.statusBar.connected(this.pluginVersion, this.health.version, lock?.model ?? this.caps.model, getBaseUrl());
       this.logInfo(`connected to Hermes ${this.health.version} at ${getBaseUrl()}`);
       // The webview flipped to "offline" the moment a switch started
       // (client was nulled); a successful connect must push connected:true
@@ -270,7 +272,7 @@ class VSHermes {
       remote: isRemoteUrl(getBaseUrl()),
       syncReport: this.syncReport,
       sessionId: this.sessionId,
-      model: this.caps?.model ?? null,
+      model: this.sessionLockFor(this.sessionId ?? '')?.model ?? this.caps?.model ?? null,
       sessions: [],
       slashCommands: this.slashCatalog(), steerAvailable: this.steerAvailable,
       maxImageBytes: getMaxImageBytes(),
@@ -598,7 +600,7 @@ class VSHermes {
         // Gateway came back — refresh capabilities, sync and the UI.
         this.health = h;
         this.caps = await c.capabilities();
-        this.statusBar.connected(this.pluginVersion, h.version, this.caps.model, getBaseUrl());
+        this.statusBar.connected(this.pluginVersion, h.version, this.sessionLockFor(this.sessionId ?? '')?.model ?? this.caps.model, getBaseUrl());
         await this.runSyncCheck(true);
         void this.listSessions();
         let model: string | null = this.caps.model ?? null;
@@ -1067,6 +1069,7 @@ class VSHermes {
     try {
       const c = await this.ensureClient();
       await c.deleteSession(target);
+      await this.context.globalState.update(this.lockKey(target), undefined);
       if (this.sessionId === target) {
         this.sessionId = null;
         this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport, sessionId: null, model: null, sessions: [], slashCommands: this.slashCatalog(), steerAvailable: this.steerAvailable, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
@@ -1172,15 +1175,25 @@ class VSHermes {
       this.lastEventAt = Date.now();
       this.stallNotified = false;
       this.sawStreamDone = false;
-      // The runs API needs the model explicitly (it does NOT fall back to the
-      // session's locked model) — resolve it from the session like the
-      // reconnect path does, so per-session model selection keeps working.
+      // The runs API needs the model+provider explicitly (it does NOT fall
+      // back to the session's locked model — that lock is honored only by
+      // the session-chat surface, and the API does not expose it). Replay the
+      // lock recorded at pick time (persisted per session, so it survives
+      // reloads); fall back to the session's advertised model — the server
+      // default — when no lock exists.
+      const lock = this.sessionLockFor(sid);
       let runModel: string | undefined;
-      try {
-        const s = await c.getSession(sid).catch(() => null);
-        runModel = s?.session.model ?? undefined;
-      } catch {
-        runModel = undefined; // server default
+      let runProvider: string | undefined;
+      if (lock) {
+        runModel = lock.model || undefined;
+        runProvider = lock.provider || undefined;
+      } else {
+        try {
+          const s = await c.getSession(sid).catch(() => null);
+          runModel = s?.session.model ?? undefined;
+        } catch {
+          runModel = undefined; // server default
+        }
       }
       // Runs-based transport: the approval-capable surface on stock Hermes.
       // The adapter normalizes the runs SSE stream to the same events the
@@ -1188,6 +1201,7 @@ class VSHermes {
       this.stream = c.runChatStream(
         sid,
         runModel,
+        runProvider,
         parts,
         (event) => this.onStreamEvent(event),
         undefined,
@@ -1476,6 +1490,27 @@ class VSHermes {
 
   // ── model switching ───────────────────────────────────────────────
 
+  // ── session model lock memory ─────────────────────────────────────
+  // The API never exposes a session's persisted lock (model_config is not
+  // serialized) and the /v1/runs surface ignores it anyway — so the plugin
+  // records the model+provider it locked and replays them on every run of
+  // that session. Persisted per session in globalState so the lock survives
+  // window reloads.
+
+  private lockKey(sessionId: string): string {
+    return `vsh.sessionLock.${sessionId}`;
+  }
+
+  private sessionLockFor(sessionId: string): { model: string; provider: string } | null {
+    return this.context.globalState.get<{ model: string; provider: string }>(this.lockKey(sessionId)) ?? null;
+  }
+
+  private async rememberSessionLock(sessionId: string, res: ModelLockResponse): Promise<void> {
+    const { model = '', provider = '' } = res.runtime ?? {};
+    if (!model && !provider) return;
+    await this.context.globalState.update(this.lockKey(sessionId), { model, provider });
+  }
+
   private async chooseModel(): Promise<void> {
     try {
       const c = await this.ensureClient();
@@ -1504,9 +1539,12 @@ class VSHermes {
         await this.newSession();
         if (!this.sessionId) return;
       }
-      await c.lockModel(this.sessionId, model, provider.provider.slug);
-      this.view.post({ type: 'model', model });
-      this.view.postInfo(`Model locked to ${model} for this session.`);
+      const lockRes = await c.lockModel(this.sessionId, model, provider.provider.slug);
+      await this.rememberSessionLock(this.sessionId, lockRes);
+      const lockedModel = lockRes.runtime?.model || model;
+      this.view.post({ type: 'model', model: lockedModel });
+      this.view.postInfo(`Model locked to ${lockedModel} for this session.`);
+      this.statusBar.connected(this.pluginVersion, this.health?.version ?? null, lockedModel, getBaseUrl());
     } catch (err) {
       this.reportError(err);
     }
@@ -1554,8 +1592,10 @@ class VSHermes {
         if (this.sessionId) {
           try {
             const c = await this.ensureClient();
-            await c.lockModel(this.sessionId, msg.model, msg.provider);
-            this.view.post({ type: 'model', model: msg.model });
+            const lockRes = await c.lockModel(this.sessionId, msg.model, msg.provider);
+            await this.rememberSessionLock(this.sessionId, lockRes);
+            const lockedModel = lockRes.runtime?.model || msg.model;
+            this.view.post({ type: 'model', model: lockedModel });
           } catch (err) {
             this.reportError(err);
           }

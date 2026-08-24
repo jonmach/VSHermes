@@ -308,19 +308,21 @@ export class HermesClient {
 
   // ── runs ─────────────────────────────────────────────────────────
 
-  createRun(model: string | undefined, input: UserMessage, sessionId?: string): Promise<RunInfo> {
-    // The runs API needs the model explicitly (it does NOT fall back to the
-    // session's locked model) and persists the turn into `session_id`'s
-    // transcript — both verified live against 0.20.5. `input` accepts a
-    // plain string OR an OpenAI-style message array whose last item carries
-    // `content` — VSHermes parts are content blocks, so wrap them in a user
-    // message (a bare parts array 400s with "No user message found in input").
+  createRun(model: string | undefined, input: UserMessage, sessionId?: string, provider?: string): Promise<RunInfo> {
+    // The runs API needs the model+provider explicitly (it does NOT fall
+    // back to the session's locked model — that lock is honored only by the
+    // session-chat surface, verified live 0.20.5) and persists the turn into
+    // `session_id`'s transcript. `input` accepts a plain string OR an
+    // OpenAI-style message array whose last item carries `content` —
+    // VSHermes parts are content blocks, so wrap them in a user message (a
+    // bare parts array 400s with "No user message found in input").
     const body: Record<string, unknown> = {};
     body.input =
       typeof input === 'string'
         ? input
         : [{ role: 'user', content: input as MessagePart[] }];
     if (model) body.model = model;
+    if (provider) body.provider = provider;
     if (sessionId) body.session_id = sessionId;
     return this.request<RunInfo>('/v1/runs', {
       method: 'POST',
@@ -331,7 +333,7 @@ export class HermesClient {
   /**
    * Runs-based streaming chat — the approval-capable surface on stock Hermes.
    *
-   * POST /v1/runs (input + model + session_id) → run_id, then GET
+   * POST /v1/runs (input + model + provider + session_id) → run_id, then GET
    * /v1/runs/{run_id}/events (SSE). Unlike the session-chat stream, the runs
    * stream embeds the event type INSIDE each JSON frame ({"event":
    * "message.delta", ...}) — there is no `event:` SSE line — and ends after
@@ -339,10 +341,16 @@ export class HermesClient {
    * normalized to the same StreamEvent vocabulary the webview already
    * consumes, including a synthesized run.started / message.started /
    * assistant.completed / done.
+   *
+   * `provider` must be sent explicitly: the runs surface ignores the
+   * session's persisted model lock (model_config.browser_model_lock is not
+   * consulted, and the API does not expose it), so a picked local model
+   * would otherwise fall back to the gateway default provider.
    */
   runChatStream(
     sessionId: string,
     model: string | undefined,
+    provider: string | undefined,
     message: UserMessage,
     onEvent: (event: StreamEvent) => void,
     signal?: AbortSignal,
@@ -355,7 +363,7 @@ export class HermesClient {
     const done = (async () => {
       let run: RunInfo;
       try {
-        run = await this.createRun(model, message, sessionId);
+        run = await this.createRun(model, message, sessionId, provider);
       } catch (err) {
         if ((err as Error).name === 'AbortError') return;
         throw err;

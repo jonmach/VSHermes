@@ -18,6 +18,12 @@
   streaming in — a busy run could be declared dead mid-stream — and a
   genuinely dropped gateway is already surfaced when the stream ends. The
   neutral "Still working…" silence-breaker remains.
+- **Picked models actually run.** Switching to a provider like LM Studio from
+  the model picker now sends the next prompt to the provider you picked.
+  Previously the selection was stored on the session, but the next message
+  could still run on the previously selected provider. The picked
+  model+provider is now remembered per session — including across window
+  reloads — and sent explicitly with every run.
 
 ## 2.0.11 (2026-08-22)
 

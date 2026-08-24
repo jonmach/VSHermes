@@ -89,6 +89,14 @@ describe('HermesClient (against contract mock)', () => {
     expect(res.runtime.provider).toBe('lmstudio');
   });
 
+  it('sends the locked provider with the run (runs surface has no lock fallback)', async () => {
+    const created = await client.createSession();
+    const handle = client.runChatStream(created.session.id, 'qwen3.6-27b-mtp', 'lmstudio', 'Reply with exactly: PONG', () => {});
+    await handle.done;
+    expect(server.lastRunBody?.model).toBe('qwen3.6-27b-mtp');
+    expect(server.lastRunBody?.provider).toBe('lmstudio');
+  });
+
   it('sends a non-streaming chat', async () => {
     const created = await client.createSession();
     const res = await client.sessionChat(created.session.id, 'Reply with exactly: PONG');
@@ -170,6 +178,7 @@ describe('HermesClient (against contract mock)', () => {
     const handle = client.runChatStream(
       'api_seed_1',
       'deepseek-v4-flash',
+      undefined,
       'run rm -rf /tmp/x',
       (ev) => events.push(ev),
     );
