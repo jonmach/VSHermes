@@ -1070,7 +1070,10 @@ class VSHermes {
       this.sessionId = res.session.id;
       this.activeRunId = null;
       this.sessionModel = res.session.model ?? null;
-      this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport, sessionId: this.sessionId, model: res.session.model, provider: this.displayProvider(), sessions: [], slashCommands: this.slashCatalog(), steerAvailable: this.steerAvailable, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
+      // Post via chatState() — a fresh session has no model lock, and the
+      // fallback chain shows the configured default in the header badge
+      // instead of a bare host (raw res.session.model is null here).
+      this.view.post(this.chatState());
       void this.listSessions();
     } catch (err) {
       this.reportError(err);
@@ -1099,7 +1102,9 @@ class VSHermes {
       this.postTranscript(resolved, msgs.data);
       void this.postLineageNotice(session?.session ?? null);
       this.sessionModel = this.cleanServerModel(session?.session.model);
-      this.view.post({ type: 'state', connected: true, baseUrl: getBaseUrl(), remote: isRemoteUrl(getBaseUrl()), syncReport: this.syncReport, sessionId: resolved, model: this.sessionModel, provider: this.displayProvider(), sessions: [], slashCommands: this.slashCatalog(), steerAvailable: this.steerAvailable, maxImageBytes: getMaxImageBytes(), maxImageDimension: getMaxImageDimension() });
+      // chatState() applies the fallback chain — an unlocked session still
+      // shows the configured default provider · model in the header.
+      this.view.post(this.chatState());
       this.focusChat();
     } catch (err) {
       this.reportError(err);
