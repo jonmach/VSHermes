@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.13 (2026-08-28)
+
+- **A fresh chat shows the default model.** Right after New Chat (`/new`), the
+  chat header and status bar now show the server's configured default
+  provider · model instead of just the host — so it is clear what a new
+  session will run on before the first message. The same applies when opening
+  an unlocked session from history.
+
 ## 2.0.12 (2026-08-24)
 
 - **Provider and model are visible everywhere.** The chat header now reads
