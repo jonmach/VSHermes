@@ -1,6 +1,6 @@
 # VSHermes — Hermes Agent chat for VS Code
 
-> One product, current build 2.0.13 (work in progress) — each build re-verified
+> One product, current build 2.0.13 — each build re-verified
 > against the pinned Hermes API surface. This README describes current
 > functionality, not history (see CHANGELOG.md for the change log).
 
@@ -20,6 +20,7 @@ forms](images/chat1.png)
 ## Features
 
 **Chat panel**
+
 - Multiline input: **Enter** sends, **Shift+Enter** inserts a newline; the
   input auto-grows with its content (long absolute paths wrap instead of
   scrolling) and resets to one line after send
@@ -53,12 +54,13 @@ forms](images/chat1.png)
   drop** works from the OS file manager (local windows) and from the
   Explorer/tree views. One caveat — **devcontainers / remote workspaces**:
   VS Code does not deliver host-filesystem (Finder) drops to webviews
-  there, which is *correct* VS Code behavior (microsoft/vscode#193558,
+  there, which is _correct_ VS Code behavior (microsoft/vscode#193558,
   #158150), not a VSHermes bug; use the **paperclip** (container file
   picker) in that case, or drop the file into the Explorer first (uploads
   it into the container), then drag it from there
 
 **Images**
+
 - Paste or drag-drop into the chat; chips show pending attachments
 - Default **file mode**: images are saved to `$HERMES_HOME/attachments/` and
   sent as a path reference, so text-only main models still work via Hermes'
@@ -71,6 +73,7 @@ forms](images/chat1.png)
   render (attachments directory registered in the webview resource roots)
 
 **Slash commands** (`/` opens the picker — working actions only)
+
 - Working actions (executed client-side against the API):
   `/new` `/clear` `/model` `/stop` `/history` `/sessions` `/resume`
   `/title` `/steer` `/status` `/skills` `/fork` `/branch` `/help`
@@ -93,13 +96,14 @@ forms](images/chat1.png)
 
 **Endpoints** (sidebar tab in the VSHermes section, or the `$(server)`
 chat title-bar icon / "VSHermes: Endpoints…" — both reveal the tab)
+
 - A built-in **Local connection** row is always present (legacy resolution:
   baseUrl setting → `$HERMES_HOME/.env` → `http://127.0.0.1:8642`) — click
   Activate to return to it; it has none of the remote constraints
 - Named endpoint profiles (name + URL), each with its own API key stored in
   VS Code **SecretStorage** (never settings.json) — e.g. your local
   container and a Hermes API server on another machine. **A profile's key
-  is the `API_SERVER_KEY` from *that server's* Hermes `.env`** — the
+  is the `API_SERVER_KEY` from _that server's_ Hermes `.env`** — the
   gateway's bearer credential. It is unrelated to model/provider keys
   (DeepSeek, OpenAI, …), which Hermes holds in its own config
 - **Remote endpoints require a key** — a non-loopback profile without an
@@ -109,7 +113,7 @@ chat title-bar icon / "VSHermes: Endpoints…" — both reveal the tab)
   keyless remote endpoint never becomes active (tree Activate and
   auto-switch on session open both fail with a clear note). Keyless
   connections are only possible to loopback (local) servers
-- **Test** probes reachability *and* validates the key (an authenticated
+- **Test** probes reachability _and_ validates the key (an authenticated
   probe after `/health`), so a missing or wrong key is reported explicitly
   instead of a false "OK"; Activate switches and reconnects. With no
   profiles configured, behaviour is unchanged
@@ -125,6 +129,7 @@ chat title-bar icon / "VSHermes: Endpoints…" — both reveal the tab)
   not per switch
 
 **Sessions**
+
 - History tree view grouped **per server**: one collapsible section per
   server (Local, profile names), keyed by **canonical URL** — two profiles
   pointing at the same machine collapse into a single section — with an
@@ -137,6 +142,7 @@ chat title-bar icon / "VSHermes: Endpoints…" — both reveal the tab)
 - Terminal (CLI) sessions open with full history — one pool of sessions
 
 **Actions & navigation**
+
 - Chat header icons: New Chat, Compatibility Check, Switch Model, Show History
   (opens the History tab), Export as Markdown, Copy Conversation, Endpoints
   (opens the Endpoints tab) — plus Refresh History on the History tab's header
@@ -154,6 +160,7 @@ chat title-bar icon / "VSHermes: Endpoints…" — both reveal the tab)
   sync state and history without user action
 
 **Sync flagging**
+
 - The plugin ships a pinned manifest (minimum Hermes version, required
   features, required endpoints) and diffs it against `GET /health` +
   `GET /v1/capabilities` on connect. Verdicts — `ok` / `outdated` / `ahead` —
@@ -165,8 +172,7 @@ chat title-bar icon / "VSHermes: Endpoints…" — both reveal the tab)
 ### HARD RULE — NO SERVER-SIDE CHANGES, EVER
 
 **VSHermes is a client-only extension. It must work against a stock,
-unmodified Hermes server that the user runs themselves.** The user has
-stated this repeatedly; it is not negotiable and must not require
+unmodified Hermes server that the user runs themselves.** The user has stated this repeatedly; it is not negotiable and must not require
 repeating.
 
 - **NEVER** modify, patch, fork, or fix hermes-agent server code
@@ -263,6 +269,7 @@ repeating.
 - Hermes with the gateway **api_server** platform enabled:
 
   `.env`:
+
   ```
   API_SERVER_ENABLED=true
   API_SERVER_KEY=<your-secret-key-min-8-chars>
@@ -314,13 +321,13 @@ Settings: `vsh.hermes.baseUrl` (default `http://127.0.0.1:8642`),
 
 ## Compatibility verdicts
 
-| Verdict   | Meaning                                                                   | Action                        |
-| --------- | ------------------------------------------------------------------------- | ----------------------------- |
-| ok        | every feature/endpoint VSHermes needs is present, version ≥ the minimum   | — (green)                     |
-| ahead     | Hermes has extra capabilities VSHermes doesn't use                        | — (green; extras are logged, not flagged) |
-| untested  | version below the minimum but nothing missing                             | — (green; note in the status-bar tooltip) |
-| outdated  | a required feature/endpoint is missing                                    | upgrade Hermes to the minimum version |
-| unknown   | server unreachable / bad key                                              | fix the connection            |
+| Verdict  | Meaning                                                                 | Action                                    |
+| -------- | ----------------------------------------------------------------------- | ----------------------------------------- |
+| ok       | every feature/endpoint VSHermes needs is present, version ≥ the minimum | — (green)                                 |
+| ahead    | Hermes has extra capabilities VSHermes doesn't use                      | — (green; extras are logged, not flagged) |
+| untested | version below the minimum but nothing missing                           | — (green; note in the status-bar tooltip) |
+| outdated | a required feature/endpoint is missing                                  | upgrade Hermes to the minimum version     |
+| unknown  | server unreachable / bad key                                            | fix the connection                        |
 
 Green = the plugin works fully. Only `outdated` is a warning, and it says
 exactly what's missing and what to upgrade to — the report is about the

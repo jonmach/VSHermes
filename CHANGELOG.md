@@ -1,7 +1,10 @@
 # Changelog
 
-## 2.0.13 (2026-08-28)
+## 2.0.13 (2026-08-29)
 
+- **Double-click any image to view it full-size.** Pasted or attached images
+  open in a large overlay — click the ✕, press Esc, or click the backdrop to
+  close; clicking the enlarged image itself does not close it.
 - **A fresh chat shows the default model.** Right after New Chat (`/new`), the
   chat header and status bar now show the server's configured default
   provider · model instead of just the host — so it is clear what a new

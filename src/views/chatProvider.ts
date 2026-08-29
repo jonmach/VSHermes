@@ -194,6 +194,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     #approval .btns button:hover { border-color: var(--vsh-accent); }
     .stop-btn { display: none; }
     .stop-btn.show { display: inline-block; background: var(--vsh-error); }
+    /* Image lightbox — double-click any chat image to view it enlarged.
+       Built dynamically by chat.ts, so only the shared styles live here. */
+    #lightbox { display: none; position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,0.75); align-items: center; justify-content: center; padding: 24px; }
+    #lightbox.show { display: flex; }
+    #lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; box-shadow: 0 4px 24px rgba(0,0,0,0.5); }
+    #lightbox .lb-close { position: absolute; top: 10px; right: 12px; background: transparent; border: none; color: var(--vsh-fg); font-size: 22px; line-height: 1; cursor: pointer; padding: 6px 10px; border-radius: 4px; }
+    #lightbox .lb-close:hover { background: var(--vsh-user-bubble); }
   </style>
 </head>
 <body>

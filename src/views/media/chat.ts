@@ -72,6 +72,48 @@ const approvalCmd = $('#approval-cmd');
 const syncBanner = $('#sync-banner');
 const connEl = $('#conn');
 
+// ── image lightbox ────────────────────────────────────────────────
+// Double-click any chat image (pasted thumbnails, assistant bubble
+// images, chips) to view it enlarged; close via ✕, Esc, or clicking the
+// backdrop. The overlay is built once here; a document-level delegated
+// listener survives transcript rebuilds (renderMessages wipes #messages).
+const lightboxEl = document.createElement('div');
+lightboxEl.id = 'lightbox';
+lightboxEl.innerHTML =
+  '<button class="lb-close" title="Close (Esc)" aria-label="Close image">✕</button><img alt="">';
+const lightboxImg = lightboxEl.querySelector('img') as HTMLImageElement;
+const lightboxClose = lightboxEl.querySelector('.lb-close') as HTMLButtonElement;
+document.body.appendChild(lightboxEl);
+
+function openLightbox(src: string): void {
+  lightboxImg.src = src;
+  lightboxEl.classList.add('show');
+}
+
+function closeLightbox(): void {
+  lightboxEl.classList.remove('show');
+  lightboxImg.removeAttribute('src');
+}
+
+lightboxClose.addEventListener('click', closeLightbox);
+// Clicking the backdrop (not the image itself) closes the lightbox.
+lightboxEl.addEventListener('click', (e) => {
+  if (e.target === lightboxEl) closeLightbox();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && lightboxEl.classList.contains('show')) closeLightbox();
+});
+// Delegated double-click: catches images rendered later by transcript
+// rebuilds and images inside assistant markdown (`.bubble img`), which
+// never get their own listeners. Both source shapes are zoomable —
+// inline base64 data URLs and file-mode webview URIs (`![Image](…)`).
+document.addEventListener('dblclick', (e) => {
+  const target = e.target as HTMLElement;
+  const img = target.tagName === 'IMG' ? (target as HTMLImageElement) : target.closest('img');
+  if (!img || !img.src || img.closest('#lightbox')) return;
+  openLightbox(img.currentSrc || img.src);
+});
+
 // ── state ──────────────────────────────────────────────────────────
 
 interface ToolCard {

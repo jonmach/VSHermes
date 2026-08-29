@@ -898,6 +898,84 @@ describe('webview bundle (dist/media/chat.js)', () => {
     expect(user.querySelector('.bubble')).toBeNull();
   });
 
+  it('double-clicking a pasted-image thumbnail opens the lightbox', () => {
+    const { dom, post } = bootWebview();
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [
+        { role: 'user', content: '![Image](https://file+.vscode-resource.vscode-cdn.net/x.png)' },
+      ],
+    } as unknown as HostMsg);
+    const img = dom.window.document.querySelector('.msg.user .images img') as HTMLImageElement;
+    expect(img).not.toBeNull();
+    img.dispatchEvent(new dom.window.MouseEvent('dblclick', { bubbles: true }));
+    const lb = dom.window.document.getElementById('lightbox') as HTMLElement;
+    expect(lb).not.toBeNull();
+    expect(lb.classList.contains('show')).toBe(true);
+    const lbImg = lb.querySelector('img') as HTMLImageElement;
+    expect(lbImg.src).toContain('file+.vscode-resource.vscode-cdn.net');
+  });
+
+  it('closes the lightbox on Esc, the ✕ button, and a backdrop click', () => {
+    const { dom, post } = bootWebview();
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [
+        { role: 'user', content: '![Image](https://file+.vscode-resource.vscode-cdn.net/x.png)' },
+      ],
+    } as unknown as HostMsg);
+    const img = dom.window.document.querySelector('.msg.user .images img') as HTMLImageElement;
+    const lb = dom.window.document.getElementById('lightbox') as HTMLElement;
+    const lbImg = lb.querySelector('img') as HTMLImageElement;
+
+    // Esc closes.
+    img.dispatchEvent(new dom.window.MouseEvent('dblclick', { bubbles: true }));
+    expect(lb.classList.contains('show')).toBe(true);
+    dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(lb.classList.contains('show')).toBe(false);
+    expect(lbImg.getAttribute('src')).toBeNull();
+
+    // ✕ button closes.
+    img.dispatchEvent(new dom.window.MouseEvent('dblclick', { bubbles: true }));
+    expect(lb.classList.contains('show')).toBe(true);
+    (lb.querySelector('.lb-close') as HTMLButtonElement).dispatchEvent(
+      new dom.window.MouseEvent('click', { bubbles: true }),
+    );
+    expect(lb.classList.contains('show')).toBe(false);
+
+    // Backdrop click closes (target is the overlay itself, not the image).
+    img.dispatchEvent(new dom.window.MouseEvent('dblclick', { bubbles: true }));
+    expect(lb.classList.contains('show')).toBe(true);
+    lb.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    expect(lb.classList.contains('show')).toBe(false);
+
+    // A click on the enlarged image itself does NOT close it.
+    img.dispatchEvent(new dom.window.MouseEvent('dblclick', { bubbles: true }));
+    expect(lb.classList.contains('show')).toBe(true);
+    lbImg.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    expect(lb.classList.contains('show')).toBe(true);
+    lb.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    expect(lb.classList.contains('show')).toBe(false);
+  });
+
+  it('double-clicking a base64 data-URL image also opens the lightbox', () => {
+    const { dom, post } = bootWebview();
+    const dataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    post({
+      type: 'messages',
+      sessionId: 's1',
+      messages: [{ role: 'user', content: dataUrl }],
+    } as unknown as HostMsg);
+    const img = dom.window.document.querySelector('.msg.user .images img') as HTMLImageElement;
+    expect(img).not.toBeNull();
+    img.dispatchEvent(new dom.window.MouseEvent('dblclick', { bubbles: true }));
+    const lb = dom.window.document.getElementById('lightbox') as HTMLElement;
+    expect(lb.classList.contains('show')).toBe(true);
+    expect((lb.querySelector('img') as HTMLImageElement).src).toBe(dataUrl);
+  });
+
   it('strips base64 data URLs from user bubble text but keeps the thumbnail', () => {
     const { dom, post } = bootWebview();
     const dataUrl = 'data:image/png;base64,' + 'A'.repeat(200);
