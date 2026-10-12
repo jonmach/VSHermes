@@ -112,6 +112,29 @@ describe('checkSync', () => {
     expect(r.messages.join(' ')).not.toContain('extra capabilities');
   });
 
+  it('knows reasoning_streaming — a 0.21.7+ server no longer triggers the ahead message', () => {
+    // The user-facing symptom this regression guards: on Hermes 0.21.7 the
+    // plugin showed "advertises extra capabilities VSHermes does not use:
+    // reasoning_streaming". The flag names incremental thinking on
+    // /v1/chat/completions and /v1/responses — transports this plugin never
+    // calls (thinking arrives via the runs stream), so it is a known optional
+    // feature, not an unknown one, and the verdict is plain ok.
+    const caps = capsWith({ features: { reasoning_streaming: true } });
+    const r = checkSync({ ...HEALTH, version: '0.21.7' }, caps, MANIFEST, '0.1.0');
+    expect(r.status).toBe('ok');
+    expect(r.unknownFeatures).toEqual([]);
+    expect(r.presentOptionalFeatures).toContain('reasoning_streaming');
+    expect(r.messages.join(' ')).not.toContain('extra capabilities');
+  });
+
+  it('does not require reasoning_streaming (old servers stay ok)', () => {
+    // The mock is the 0.20.0 baseline: no reasoning_streaming advertised, and
+    // that must NOT be treated as outdated.
+    const r = checkSync(HEALTH, MOCK_CAPABILITIES, MANIFEST, '0.1.0');
+    expect(r.status).toBe('ok');
+    expect(r.missingRequiredFeatures).not.toContain('reasoning_streaming');
+  });
+
   it('does not require run_steer (steer is optional — old servers stay ok)', () => {
     // The mock is the 0.20.0 baseline: no run_steer advertised, and that
     // must NOT be treated as outdated — /steer just degrades gracefully.

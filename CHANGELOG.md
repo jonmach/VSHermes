@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.14 (2026-10-12)
+
+- **Compatibility check updated for Hermes 0.21.7.** A 0.21.7 server advertises
+  one more capability flag than the check previously recognised, which made the
+  Compatibility Check report "advertises extra capabilities VSHermes does not
+  use". The flag is now listed as known-optional, so the check reports OK.
+  Display-only: no change to how chats run, how thinking is shown, or which
+  Hermes versions are supported (the floor remains 0.20.0).
+
 ## 2.0.13 (2026-08-29)
 
 - **Double-click any image to view it full-size.** Pasted or attached images

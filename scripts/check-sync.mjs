@@ -41,7 +41,7 @@ const REQUIRED_ENDPOINTS = [
 const KNOWN_OPTIONAL = new Set([
   'admin_config_rw', 'jobs_admin', 'memory_write_api', 'audio_api',
   'realtime_voice', 'responses_api', 'responses_streaming',
-  'session_resources', 'run_steer', 'cors',
+  'reasoning_streaming', 'session_resources', 'run_steer', 'cors',
 ]);
 
 function arg(name) {

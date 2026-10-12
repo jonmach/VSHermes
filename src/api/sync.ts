@@ -85,6 +85,7 @@ export const MANIFEST: SyncManifest = {
     realtime_voice: 'Realtime voice mode',
     responses_api: 'OpenAI Responses API',
     responses_streaming: 'Responses API streaming',
+    reasoning_streaming: 'Model reasoning streamed on chat completions / Responses',
     session_resources: 'Session resources (per-session scoped context)',
     run_steer: 'Run steering (mid-run guidance injection)',
     cors: 'CORS configuration',
